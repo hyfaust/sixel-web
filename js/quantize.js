@@ -19,47 +19,22 @@
     // ============================================================
 
     function pnnQuant(rgba, w, h, maxColors) {
-        // 构建直方图
-        var histogram = new Map();
-        for (var i = 0; i < w * h; i++) {
-            if (rgba[i * 4 + 3] < 128) continue;
-            var key = (rgba[i * 4] << 16) | (rgba[i * 4 + 1] << 8) | rgba[i * 4 + 2];
-            var prev = histogram.get(key);
-            histogram.set(key, prev !== undefined ? prev + 1 : 1);
+        var histData = buildHistogram(rgba, w, h);
+        var entries = histData.entries;
+
+        if (entries.length <= maxColors) {
+            return buildDirectMapping(rgba, w, h, histData, maxColors);
         }
 
-        if (histogram.size <= maxColors) {
-            return buildDirectMapping(rgba, w, h, histogram, maxColors);
-        }
-
-        // 初始化 bins（预量化到 5-bit 以减少初始 bin 数量，最大 32768 bins）
         var bins = [];
-        var quantMap = new Map();
-        for (var entry of histogram) {
-            var key = entry[0];
-            var cnt = entry[1];
-            var r = (key >> 16) & 0xFF;
-            var g = (key >> 8) & 0xFF;
-            var b = key & 0xFF;
-            // 5-bit 量化（精度损失由 centroid 平均补偿）
-            var qKey = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
-            var existing = quantMap.get(qKey);
-            if (existing !== undefined) {
-                var bin = bins[existing];
-                bin.cnt += cnt;
-                bin.sr += r * cnt;
-                bin.sg += g * cnt;
-                bin.sb += b * cnt;
-            } else {
-                quantMap.set(qKey, bins.length);
-                bins.push({
-                    cnt: cnt,
-                    sr: r * cnt, sg: g * cnt, sb: b * cnt,
-                    nn: -1, dist: 1e100
-                });
-            }
+        for (var ei = 0; ei < entries.length; ei++) {
+            var e = entries[ei];
+            bins.push({
+                cnt: e.count,
+                sr: e.r * e.count, sg: e.g * e.count, sb: e.b * e.count,
+                nn: -1, dist: 1e100
+            });
         }
-        quantMap = null;
 
         var nBins = bins.length;
 
@@ -159,30 +134,22 @@
         }
         var palCount = palIdx;
 
-        // 构建从原始颜色到调色板的映射（最近邻匹配）
-        var origColorMap = new Map();
-        for (var entry of histogram) {
-            var key = entry[0];
-            var pr = (key >> 16) & 0xFF;
-            var pg = (key >> 8) & 0xFF;
-            var pb = key & 0xFF;
+        var hashLookup = new Uint16Array(32768);
+        for (var h2 = 0; h2 < 32768; h2++) {
+            var hr = (h2 >> 10) << 3, hg = ((h2 >> 5) & 31) << 3, hb = (h2 & 31) << 3;
             var bestIdx = 0, bestDist = 0x7FFFFFFF;
             for (var pi = 0; pi < palCount; pi++) {
-                var dr = pr - palR[pi], dg = pg - palG[pi], db = pb - palB[pi];
+                var dr = hr - palR[pi], dg = hg - palG[pi], db = hb - palB[pi];
                 var dist = dr * dr + dg * dg + db * db;
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestIdx = pi;
-                    if (dist === 0) break;
-                }
+                if (dist < bestDist) { bestDist = dist; bestIdx = pi; }
             }
-            origColorMap.set(key, bestIdx);
+            hashLookup[h2] = bestIdx + 1;
         }
 
         var pixels = new Uint8Array(w * h);
         for (var i = 0; i < w * h; i++) {
-            var key = (rgba[i * 4] << 16) | (rgba[i * 4 + 1] << 8) | rgba[i * 4 + 2];
-            pixels[i] = origColorMap.get(key) || 0;
+            var hash = ((rgba[i * 4] >> 3) << 10) | ((rgba[i * 4 + 1] >> 3) << 5) | (rgba[i * 4 + 2] >> 3);
+            pixels[i] = hashLookup[hash] - 1;
         }
 
         return { pixels: pixels, palette: palette };
@@ -193,29 +160,17 @@
     // ============================================================
 
     function medianCut(rgba, w, h, maxColors) {
-        // 构建颜色直方图 (只计算不透明像素)
-        var histogram = new Map();
-        for (var i = 0; i < w * h; i++) {
-            var a = rgba[i * 4 + 3];
-            if (a < 128) continue;
-            var key = (rgba[i * 4] << 16) | (rgba[i * 4 + 1] << 8) | rgba[i * 4 + 2];
-            var prev = histogram.get(key);
-            histogram.set(key, prev !== undefined ? prev + 1 : 1);
+        var histData = buildHistogram(rgba, w, h);
+        var entries = histData.entries;
+
+        if (entries.length <= maxColors) {
+            return buildDirectMapping(rgba, w, h, histData, maxColors);
         }
 
-        // 直方图颜色数不超过 maxColors 时直接映射
-        if (histogram.size <= maxColors) {
-            return buildDirectMapping(rgba, w, h, histogram, maxColors);
-        }
-
-        // Median Cut
         var boxes = [{ colors: [] }];
-        for (var entry of histogram) {
-            var hkey = entry[0];
-            boxes[0].colors.push({
-                r: (hkey >> 16) & 0xFF, g: (hkey >> 8) & 0xFF, b: hkey & 0xFF,
-                count: entry[1]
-            });
+        for (var ei = 0; ei < entries.length; ei++) {
+            var e = entries[ei];
+            boxes[0].colors.push({ r: e.r, g: e.g, b: e.b, count: e.count });
         }
 
         while (boxes.length < maxColors) {
@@ -273,34 +228,24 @@
             palR[i] = r;
             palG[i] = g;
             palB[i] = b;
-
-            for (var j = 0; j < bColors.length; j++) {
-                var ckey = (bColors[j].r << 16) | (bColors[j].g << 8) | bColors[j].b;
-                paletteLookup.set(ckey, i);
-            }
         }
 
-        // 映射所有像素
+        var hashLookup = new Uint16Array(32768);
+        for (var h2 = 0; h2 < 32768; h2++) {
+            var hr = (h2 >> 10) << 3, hg = ((h2 >> 5) & 31) << 3, hb = (h2 & 31) << 3;
+            var bestIdx = 0, bestDist = 0x7FFFFFFF;
+            for (var pi = 0; pi < palCount; pi++) {
+                var dr = hr - palR[pi], dg = hg - palG[pi], db = hb - palB[pi];
+                var dist = dr * dr + dg * dg + db * db;
+                if (dist < bestDist) { bestDist = dist; bestIdx = pi; }
+            }
+            hashLookup[h2] = bestIdx + 1;
+        }
+
         var pixels = new Uint8Array(w * h);
         for (var i = 0; i < w * h; i++) {
-            var pr = rgba[i * 4], pg = rgba[i * 4 + 1], pb = rgba[i * 4 + 2];
-            var pxKey = (pr << 16) | (pg << 8) | pb;
-            var found = paletteLookup.get(pxKey);
-            if (found !== undefined) {
-                pixels[i] = found;
-            } else {
-                var bestIdx = 0, bestDist = 0x7FFFFFFF;
-                for (var pi = 0; pi < palCount; pi++) {
-                    var dr = pr - palR[pi], dg = pg - palG[pi], db = pb - palB[pi];
-                    var dist = dr * dr + dg * dg + db * db;
-                    if (dist < bestDist) {
-                        bestDist = dist;
-                        bestIdx = pi;
-                        if (dist === 0) break;
-                    }
-                }
-                pixels[i] = bestIdx;
-            }
+            var hash = ((rgba[i * 4] >> 3) << 10) | ((rgba[i * 4 + 1] >> 3) << 5) | (rgba[i * 4 + 2] >> 3);
+            pixels[i] = hashLookup[hash] - 1;
         }
 
         return { pixels: pixels, palette: palette };
@@ -310,23 +255,40 @@
     // 共用辅助函数
     // ============================================================
 
-    /** 当颜色数不超过 maxColors 时直接映射 */
-    function buildDirectMapping(rgba, w, h, histogram, maxColors) {
+    /** 构建 15-bit R5G5B5 哈希直方图（平坦数组，零 GC 开销） */
+    function buildHistogram(rgba, w, h) {
+        var hist = new Uint16Array(32768);
+        var total = w * h;
+        for (var i = 0; i < total; i++) {
+            if (rgba[i * 4 + 3] < 128) continue;
+            var hash = ((rgba[i * 4] >> 3) << 10) | ((rgba[i * 4 + 1] >> 3) << 5) | (rgba[i * 4 + 2] >> 3);
+            if (hist[hash] < 65535) hist[hash]++;
+        }
+        var entries = [];
+        for (var h2 = 0; h2 < 32768; h2++) {
+            if (hist[h2] === 0) continue;
+            entries.push({
+                hash: h2, count: hist[h2],
+                r: (h2 >> 10) << 3, g: ((h2 >> 5) & 31) << 3, b: (h2 & 31) << 3
+            });
+        }
+        return { hist: hist, entries: entries, size: entries.length };
+    }
+
+    /** 当颜色数不超过 maxColors 时直接映射（15-bit 哈希版本） */
+    function buildDirectMapping(rgba, w, h, histData, maxColors) {
         var palette = new Uint8Array(maxColors * 3);
-        var colorMap = new Map();
-        var idx = 0;
-        for (var entry of histogram) {
-            var ekey = entry[0];
-            palette[idx * 3] = (ekey >> 16) & 0xFF;
-            palette[idx * 3 + 1] = (ekey >> 8) & 0xFF;
-            palette[idx * 3 + 2] = ekey & 0xFF;
-            colorMap.set(ekey, idx);
-            idx++;
+        var entries = histData.entries;
+        for (var idx = 0; idx < entries.length; idx++) {
+            palette[idx * 3] = entries[idx].r;
+            palette[idx * 3 + 1] = entries[idx].g;
+            palette[idx * 3 + 2] = entries[idx].b;
+            histData.hist[entries[idx].hash] = idx + 1;
         }
         var pixels = new Uint8Array(w * h);
         for (var i = 0; i < w * h; i++) {
-            var pxKey = (rgba[i * 4] << 16) | (rgba[i * 4 + 1] << 8) | rgba[i * 4 + 2];
-            pixels[i] = colorMap.get(pxKey) || 0;
+            var hash = ((rgba[i * 4] >> 3) << 10) | ((rgba[i * 4 + 1] >> 3) << 5) | (rgba[i * 4 + 2] >> 3);
+            pixels[i] = histData.hist[hash] - 1;
         }
         return { pixels: pixels, palette: palette };
     }
@@ -343,8 +305,9 @@
 
         var rangeR = maxR - minR, rangeG = maxG - minG, rangeB = maxB - minB;
         var ch;
-        if (rangeR >= rangeG && rangeR >= rangeB) ch = 'r';
-        else if (rangeG >= rangeR && rangeG >= rangeB) ch = 'g';
+        var lumR = rangeR * 0.299, lumG = rangeG * 0.587, lumB = rangeB * 0.114;
+        if (lumR >= lumG && lumR >= lumB) ch = 'r';
+        else if (lumG >= lumR && lumG >= lumB) ch = 'g';
         else ch = 'b';
 
         colors.sort(function (a, b) { return a[ch] - b[ch]; });

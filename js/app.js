@@ -106,32 +106,40 @@
         }
 
         var out = new Uint8Array(w * h);
+        // 15-bit 颜色查找缓存（libsixel cachetable 策略）
+        var cache = new Uint16Array(32768);
 
         for (var y = 0; y < h; y++) {
             for (var x = 0; x < w; x++) {
                 var pos = y * w + x;
                 var r = errR[pos], g = errG[pos], b = errB[pos];
-                // clamp
                 if (r < 0) r = 0; else if (r > 255) r = 255;
                 if (g < 0) g = 0; else if (g > 255) g = 255;
                 if (b < 0) b = 0; else if (b > 255) b = 255;
 
-                // 找最近调色板色
-                var bestIdx = 0, bestDist = 0x7FFFFFFF;
-                for (var pi = 0; pi < palCount; pi++) {
-                    var dr = r - palette[pi * 3];
-                    var dg = g - palette[pi * 3 + 1];
-                    var db = b - palette[pi * 3 + 2];
-                    var dist = dr * dr + dg * dg + db * db;
-                    if (dist < bestDist) {
-                        bestDist = dist;
-                        bestIdx = pi;
-                        if (dist === 0) break;
+                var hash = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+                var bestIdx;
+                var cached = cache[hash];
+                if (cached) {
+                    bestIdx = cached - 1;
+                } else {
+                    bestIdx = 0;
+                    var bestDist = 0x7FFFFFFF;
+                    for (var pi = 0; pi < palCount; pi++) {
+                        var dr = r - palette[pi * 3];
+                        var dg = g - palette[pi * 3 + 1];
+                        var db = b - palette[pi * 3 + 2];
+                        var dist = dr * dr + dg * dg + db * db;
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            bestIdx = pi;
+                            if (dist === 0) break;
+                        }
                     }
+                    cache[hash] = bestIdx + 1;
                 }
                 out[pos] = bestIdx;
 
-                // 计算误差
                 var er = r - palette[bestIdx * 3];
                 var eg = g - palette[bestIdx * 3 + 1];
                 var eb = b - palette[bestIdx * 3 + 2];
