@@ -31,8 +31,9 @@
             totalLen += bytes.length;
         }
 
-        // DCS 头
+        // DCS 头 + 光栅属性 (宽高)
         push(te.encode(eightBit ? '\x900;0;0q' : '\x1bP0;0;0q'));
+        push(te.encode('"1;1;' + w + ';' + h));
 
         // 颜色定义
         for (let k = 0; k < usedColors.length; k++) {
