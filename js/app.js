@@ -274,23 +274,78 @@
     }
 
     // ============================================================
+    // 设置持久化 (localStorage)
+    // ============================================================
+
+    var SETTINGS_KEY = 'sixel-web-settings';
+
+    var SETTINGS_IDS = [
+        'opt-colors', 'opt-keep-res', 'opt-max-width',
+        'opt-encode', 'opt-quality',
+        'opt-dither', 'opt-8bit', 'opt-gri-limit'
+    ];
+
+    function saveSettings() {
+        var data = {};
+        for (var i = 0; i < SETTINGS_IDS.length; i++) {
+            var el = document.getElementById(SETTINGS_IDS[i]);
+            if (!el) continue;
+            data[SETTINGS_IDS[i]] = el.type === 'checkbox' ? el.checked : el.value;
+        }
+        try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(data)); } catch (e) {}
+    }
+
+    function loadSettings() {
+        var raw;
+        try { raw = localStorage.getItem(SETTINGS_KEY); } catch (e) {}
+        if (!raw) return;
+        var data;
+        try { data = JSON.parse(raw); } catch (e) { return; }
+        for (var i = 0; i < SETTINGS_IDS.length; i++) {
+            var id = SETTINGS_IDS[i];
+            if (data[id] === undefined) continue;
+            var el = document.getElementById(id);
+            if (!el) continue;
+            if (el.type === 'checkbox') {
+                el.checked = !!data[id];
+            } else {
+                el.value = data[id];
+            }
+        }
+    }
+
+    // ============================================================
     // 初始化
     // ============================================================
 
     function init() {
+        // 恢复设置
+        loadSettings();
+
         // 颜色滑块
         var slider = document.getElementById('opt-colors');
         var valSpan = document.getElementById('opt-colors-value');
+        valSpan.textContent = slider.value;
         slider.addEventListener('input', function () { valSpan.textContent = slider.value; });
 
         // 保持原始分辨率 复选框联动
         var keepResCb = document.getElementById('opt-keep-res');
         var maxWInput = document.getElementById('opt-max-width');
         var maxWLabel = document.getElementById('max-width-label');
-        keepResCb.addEventListener('change', function () {
+        function updateMaxWState() {
             maxWInput.disabled = keepResCb.checked;
             maxWLabel.style.opacity = keepResCb.checked ? '0.4' : '1';
-        });
+        }
+        updateMaxWState();
+        keepResCb.addEventListener('change', updateMaxWState);
+
+        // 任意设置变更时自动保存
+        for (var i = 0; i < SETTINGS_IDS.length; i++) {
+            var el = document.getElementById(SETTINGS_IDS[i]);
+            if (!el) continue;
+            el.addEventListener('change', saveSettings);
+            if (el.type === 'range') el.addEventListener('input', saveSettings);
+        }
 
         // Tab 切换
         var tabs = document.querySelectorAll('.tab');
