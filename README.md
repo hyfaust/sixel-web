@@ -43,6 +43,20 @@ Sixel is a bitmap graphics format supported by modern terminal emulators such as
 - Drag-and-drop or click to upload `.six` files
 - Export decoded image as PNG or JPEG
 
+## Performance
+
+Inspired by libsixel's C implementation, the following optimizations have been applied:
+
+| Optimization | Impact | Description |
+|---|---|---|
+| FS color lookup cache | 5–10× on FS stage | 15-bit R5G5B5 `Uint16Array(32768)` cache; first lookup O(256), subsequent O(1) |
+| 15-bit flat histogram | 2–3× on quantize | `Uint16Array(32768)` replaces `Map`; zero GC overhead |
+| Luminosity-weighted split | Quality improvement | ITU-R BT.601 weighting (R×0.299, G×0.587, B×0.114) for Median Cut dimension selection |
+| Histogram sampling | 1.5–2× for large images | Median Cut samples 50,000 pixels for palette selection; PNN uses full image |
+| Auto-disable FS | Skips when unnecessary | Floyd-Steinberg is skipped when **original** unique colors ≤ palette size (quantization is lossless) |
+
+For a detailed analysis of libsixel's optimization techniques, see [docs/libsixel-optimizations.md](docs/libsixel-optimizations.md).
+
 ## Usage
 
 Open `index.html` in any modern browser. No build step, no dependencies.

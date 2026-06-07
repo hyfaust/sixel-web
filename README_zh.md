@@ -43,6 +43,20 @@
 - 拖放或点击上传 `.six` 文件
 - 导出解码图片为 PNG 或 JPEG
 
+## 性能优化
+
+借鉴 libsixel 的 C 实现，已应用以下优化：
+
+| 优化 | 收益 | 说明 |
+|---|---|---|
+| FS 颜色查找缓存 | FS 阶段 5–10× | 15-bit R5G5B5 `Uint16Array(32768)` 缓存，首次 O(256)，后续 O(1) |
+| 15-bit 平坦直方图 | 量化阶段 2–3× | `Uint16Array(32768)` 替代 `Map`，零 GC 开销 |
+| 亮度加权分割 | 质量提升 | ITU-R BT.601 权重（R×0.299, G×0.587, B×0.114）用于 Median Cut 维度选择 |
+| 直方图采样 | 大图 1.5–2× | Median Cut 采样 50000 像素构建调色板；PNN 使用全量数据 |
+| 自动禁用 FS | 无损时跳过 | 量化前唯一色数 ≤ 调色板大小时跳过 Floyd-Steinberg（量化本身无损） |
+
+详细的 libsixel 性能分析见 [docs/libsixel-optimizations.md](docs/libsixel-optimizations.md)。
+
 ## 使用方法
 
 在任意现代浏览器中打开 `index.html`，无需构建步骤，无依赖。

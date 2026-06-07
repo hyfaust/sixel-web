@@ -45,7 +45,7 @@
             quantInput = applyBayerDither(resizedData, targetW, targetH, maxColors);
         }
 
-        // 量化
+        // 量化（返回 { pixels, palette, histEntries }）
         var result;
         if (opts.quality === 'high') {
             result = window.Quantize.pnnQuant(quantInput.data, targetW, targetH, maxColors);
@@ -53,8 +53,9 @@
             result = window.Quantize.medianCut(quantInput.data, targetW, targetH, maxColors);
         }
 
-        // Floyd-Steinberg 后处理误差扩散（量化后）
-        if (ditherMode === 'fs') {
+        // Floyd-Steinberg 后处理误差扩散
+        // 量化前唯一色数 ≤ maxColors 时，量化无损，跳过 FS
+        if (ditherMode === 'fs' && result.histEntries > maxColors) {
             result.pixels = applyFloydSteinberg(
                 quantInput.data, result.pixels, result.palette, targetW, targetH);
         }

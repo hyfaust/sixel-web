@@ -152,7 +152,7 @@
             pixels[i] = hashLookup[hash] - 1;
         }
 
-        return { pixels: pixels, palette: palette };
+        return { pixels: pixels, palette: palette, histEntries: entries.length };
     }
 
     // ============================================================
@@ -248,7 +248,7 @@
             pixels[i] = hashLookup[hash] - 1;
         }
 
-        return { pixels: pixels, palette: palette };
+        return { pixels: pixels, palette: palette, histEntries: entries.length };
     }
 
     // ============================================================
@@ -295,7 +295,7 @@
             var hash = ((rgba[i * 4] >> 3) << 10) | ((rgba[i * 4 + 1] >> 3) << 5) | (rgba[i * 4 + 2] >> 3);
             pixels[i] = histData.hist[hash] - 1;
         }
-        return { pixels: pixels, palette: palette };
+        return { pixels: pixels, palette: palette, histEntries: histData.entries.length };
     }
 
     /** 分割一个颜色 box 为两个子 box（加权中位数） */
