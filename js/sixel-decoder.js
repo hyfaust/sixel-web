@@ -169,8 +169,11 @@
         }
         if (height === 0) height = maxBandY || 6;
 
-        // 渲染 RGBA
+        // 渲染 RGBA（白色背景填充透明区域）
         var pixels = new Uint8ClampedArray(width * height * 4);
+        for (var fi = 0; fi < pixels.length; fi += 4) {
+            pixels[fi] = 255; pixels[fi+1] = 255; pixels[fi+2] = 255; pixels[fi+3] = 255;
+        }
 
         for (var entry of bandMap) {
             var key = entry[0];

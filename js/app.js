@@ -13,15 +13,13 @@
         var maxPxWidth = opts.maxPxWidth || 640;
         var dither = opts.dither || false;
 
-        // 缩放
+        // 缩放（保持原始高宽比，仅限制最大宽度）
         var targetW = w, targetH = h;
-        var charAspect = 0.5;
         if (w > maxPxWidth) {
             var ratio = maxPxWidth / w;
             targetW = maxPxWidth;
             targetH = Math.round(h * ratio);
         }
-        targetH = Math.round(targetH * charAspect);
         if (targetH < 1) targetH = 1;
         if (targetW < 1) targetW = 1;
 
