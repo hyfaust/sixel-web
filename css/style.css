@@ -47,6 +47,7 @@ h1 { font-size: 2rem; margin-bottom: 0.5rem; }
 /* Form */
 .form-group { margin-bottom: 1rem; }
 .form-group label { display: block; color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.25rem; }
+.group-label { color: var(--text-dim); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .form-row { display: flex; gap: 1rem; flex-wrap: wrap; }
 .form-row .form-group { flex: 1; min-width: 120px; }
 
