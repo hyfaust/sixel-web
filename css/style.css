@@ -18,7 +18,13 @@ body {
     line-height: 1.6;
 }
 
-.container { max-width: 960px; margin: 0 auto; padding: 2rem 1rem; }
+.container { max-width: 960px; margin: 0 auto; padding: 2rem 1rem; position: relative; }
+
+.github-corner {
+    position: absolute; top: 1.5rem; right: 0;
+    color: var(--text-dim); transition: color 0.2s;
+}
+.github-corner:hover { color: var(--accent); }
 
 h1 { font-size: 2rem; margin-bottom: 0.5rem; }
 .subtitle { color: var(--text-dim); margin-bottom: 2rem; }
