@@ -10,7 +10,7 @@
 <body>
     <div class="container">
         <h1>sixel-web</h1>
-        <p class="subtitle">Sixel 图片格式在线转换工具 — 纯前端，零服务端依赖</p>
+        <p class="subtitle">Sixel 图片格式在线转换工具</p>
 
         <div class="tabs">
             <button class="tab active" data-tab="convert">图片 → Sixel</button>
@@ -53,11 +53,11 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>抖动模式</label>
-                        <select id="opt-dither">
+                        <label>抖动算法 (dithering)</label>
+                        <select id="opt-dither" style="max-width:140px">
                             <option value="none">无</option>
-                            <option value="bayer">Bayer 有序抖动</option>
-                            <option value="fs" selected>Floyd-Steinberg 误差扩散</option>
+                            <option value="bayer">Bayer</option>
+                            <option value="fs" selected>Floyd-Steinberg</option>
                         </select>
                     </div>
                     <div class="checkbox-group">
