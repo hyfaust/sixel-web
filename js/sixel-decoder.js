@@ -1,5 +1,7 @@
 /**
  * sixel-decoder.js — Sixel 解码器
+ *
+ * 兼容 img2sixel (\x1bPq) 和 pysixel (\x1bP0;0;0q) 两种 DCS 头格式
  */
 (function () {
     'use strict';
@@ -13,18 +15,21 @@
 
         var width = 0, height = 0;
 
-        // 光栅属性: "Pan;Pad;Ph;Pv
+        // 光栅属性: "Pan;Pad;Ph;Pv  (可能在 DCS q 之后)
         var rasterMatch = sixelStr.match(/"(\d+);(\d+);(\d+);(\d+)/);
         if (rasterMatch) {
             width = parseInt(rasterMatch[3]);
             height = parseInt(rasterMatch[4]);
         }
 
-        // 提取 body (DCS q ... ST)
-        var bodyStart = sixelStr.indexOf('q');
-        if (bodyStart === -1) return { width: 0, height: 0, pixels: new Uint8ClampedArray(0) };
-        bodyStart++;
+        // 查找 DCS q 结束位置（兼容 \x1bPq 和 \x1bP0;0;0q）
+        // 找到 q 后面的第一个 sixel 字符或 # 或 " 作为 body 起点
+        var bodyStart = -1;
+        var qPos = sixelStr.indexOf('q');
+        if (qPos === -1) return { width: 0, height: 0, pixels: new Uint8ClampedArray(0) };
+        bodyStart = qPos + 1;
 
+        // 跳过光栅属性 "1;1;W;H
         var bodyEnd = sixelStr.lastIndexOf('\x1b\\');
         if (bodyEnd === -1) bodyEnd = sixelStr.lastIndexOf('\x9c');
         if (bodyEnd === -1) bodyEnd = sixelStr.length;
@@ -39,20 +44,14 @@
                 var c = body.charCodeAt(si);
                 if (c === 0x24 || c === 0x2D) {
                     mx = Math.max(mx, tx); tx = 0; si++;
-                } else if (c === 0x23) {
-                    si++;
-                    while (si < body.length && body.charCodeAt(si) !== 0x3B &&
-                           !(body.charCodeAt(si) >= 0x30 && body.charCodeAt(si) <= 0x39)) si++;
                 } else if (c === 0x21) {
-                    // RLE: !count char
                     si++;
-                    var countStr = '';
+                    var cs = '';
                     while (si < body.length && body.charCodeAt(si) >= 0x30 && body.charCodeAt(si) <= 0x39) {
-                        countStr += body[si]; si++;
+                        cs += body[si]; si++;
                     }
-                    var rleCount = parseInt(countStr) || 1;
-                    tx += rleCount;
-                    si++; // skip the sixel char
+                    tx += (parseInt(cs) || 1);
+                    if (si < body.length) si++; // skip sixel char
                 } else if (c >= 0x3F && c <= 0x7E) {
                     tx++; si++;
                 } else {
@@ -89,16 +88,15 @@
                 }
                 var colorNum = parseInt(numStr) || 0;
 
-                // 检查是否有颜色定义 #N;2;R;G;B
                 if (i < body.length && body.charCodeAt(i) === 0x3B) {
-                    // 这是颜色定义
-                    i++; // skip ';'
+                    // 颜色定义 #N;2;R;G;B
+                    i++;
                     var typeStr = '';
                     while (i < body.length && body.charCodeAt(i) >= 0x30 && body.charCodeAt(i) <= 0x39) {
                         typeStr += body[i]; i++;
                     }
                     if (typeStr === '2' && i < body.length && body.charCodeAt(i) === 0x3B) {
-                        i++; // skip ';'
+                        i++;
                         var rStr = '';
                         while (i < body.length && body.charCodeAt(i) >= 0x30 && body.charCodeAt(i) <= 0x39) { rStr += body[i]; i++; }
                         if (i < body.length && body.charCodeAt(i) === 0x3B) { i++; }
@@ -113,23 +111,18 @@
                             Math.round(parseInt(bStr) * 255 / 100)
                         ];
                     }
-                    // 不回退 i，继续解析下一个字符
                 } else {
-                    // 这是颜色选择 #N
+                    // 颜色选择 #N
                     currentColor = colorNum;
-                    // 不回退 i，继续解析下一个字符
                 }
                 continue;
             }
 
-            // '$' 回到行首
             if (ch === 0x24) { x = 0; i++; continue; }
-
-            // '-' 换行
             if (ch === 0x2D) { x = 0; currentBandY += 6; i++; continue; }
 
-            // RLE: !count char
             if (ch === 0x21) {
+                // RLE: !count char
                 i++;
                 var rCountStr = '';
                 while (i < body.length && body.charCodeAt(i) >= 0x30 && body.charCodeAt(i) <= 0x39) {
@@ -147,7 +140,6 @@
                 i++; continue;
             }
 
-            // Sixel 字符 (0x3F - 0x7E)
             if (ch >= 0x3F && ch <= 0x7E) {
                 var sBits = ch - 0x3F;
                 var sArr = ensureBand(currentColor, currentBandY);
@@ -169,10 +161,10 @@
         }
         if (height === 0) height = maxBandY || 6;
 
-        // 渲染 RGBA（白色背景填充透明区域）
+        // 渲染 RGBA（白色背景）
         var pixels = new Uint8ClampedArray(width * height * 4);
         for (var fi = 0; fi < pixels.length; fi += 4) {
-            pixels[fi] = 255; pixels[fi+1] = 255; pixels[fi+2] = 255; pixels[fi+3] = 255;
+            pixels[fi] = 255; pixels[fi + 1] = 255; pixels[fi + 2] = 255; pixels[fi + 3] = 255;
         }
 
         for (var entry of bandMap) {
