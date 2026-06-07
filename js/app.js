@@ -10,12 +10,12 @@
 
     function preprocessImage(imageData, w, h, opts) {
         var maxColors = opts.maxColors || 256;
-        var maxPxWidth = opts.maxPxWidth || 640;
+        var maxPxWidth = opts.maxPxWidth || 0;  // 0 = 不限制，保持原始分辨率
         var dither = opts.dither || false;
 
-        // 缩放（保持原始高宽比，仅限制最大宽度）
+        // 缩放（保持原始高宽比，仅在 maxPxWidth > 0 时限制最大宽度）
         var targetW = w, targetH = h;
-        if (w > maxPxWidth) {
+        if (maxPxWidth > 0 && w > maxPxWidth) {
             var ratio = maxPxWidth / w;
             targetW = maxPxWidth;
             targetH = Math.round(h * ratio);
@@ -120,9 +120,10 @@
     }
 
     function getOptions() {
+        var maxWVal = parseInt(document.getElementById('opt-max-width').value);
         return {
             maxColors: parseInt(document.getElementById('opt-colors').value) || 256,
-            maxPxWidth: (parseInt(document.getElementById('opt-max-width').value) || 80) * 8,
+            maxPxWidth: (isNaN(maxWVal) || maxWVal <= 0) ? 0 : maxWVal * 8,
             dither: document.getElementById('opt-dither').checked,
             eightBit: document.getElementById('opt-8bit').checked,
             griLimit: document.getElementById('opt-gri-limit').checked,
