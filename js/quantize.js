@@ -160,11 +160,11 @@
     // ============================================================
 
     function medianCut(rgba, w, h, maxColors) {
-        var histData = buildHistogram(rgba, w, h);
+        var histData = buildHistogram(rgba, w, h, 50000);
         var entries = histData.entries;
 
         if (entries.length <= maxColors) {
-            return buildDirectMapping(rgba, w, h, histData, maxColors);
+            return buildDirectMapping(rgba, w, h, buildHistogram(rgba, w, h, 0), maxColors);
         }
 
         var boxes = [{ colors: [] }];
@@ -255,11 +255,16 @@
     // 共用辅助函数
     // ============================================================
 
-    /** 构建 15-bit R5G5B5 哈希直方图（平坦数组，零 GC 开销） */
-    function buildHistogram(rgba, w, h) {
+    /** 构建 15-bit R5G5B5 哈希直方图（平坦数组，零 GC 开销）
+     *  maxSample > 0 时对大图做均匀采样 */
+    function buildHistogram(rgba, w, h, maxSample) {
         var hist = new Uint16Array(32768);
         var total = w * h;
-        for (var i = 0; i < total; i++) {
+        var step = 1;
+        if (maxSample && total > maxSample) {
+            step = Math.ceil(total / maxSample);
+        }
+        for (var i = 0; i < total; i += step) {
             if (rgba[i * 4 + 3] < 128) continue;
             var hash = ((rgba[i * 4] >> 3) << 10) | ((rgba[i * 4 + 1] >> 3) << 5) | (rgba[i * 4 + 2] >> 3);
             if (hist[hash] < 65535) hist[hash]++;
