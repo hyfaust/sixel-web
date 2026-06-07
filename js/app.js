@@ -10,7 +10,7 @@
 
     function preprocessImage(imageData, w, h, opts) {
         var maxColors = opts.maxColors || 256;
-        var maxPxWidth = opts.maxPxWidth || 0;  // 0 = 不限制，保持原始分辨率
+        var maxPxWidth = opts.maxPxWidth || 0;  // 0 = 不缩放
         var dither = opts.dither || false;
 
         // 缩放（保持原始高宽比，仅在 maxPxWidth > 0 时限制最大宽度）
@@ -45,8 +45,13 @@
             finalData = applyBayerDither(resizedData, targetW, targetH, maxColors);
         }
 
-        // 量化
-        var result = window.Quantize.medianCut(finalData.data, targetW, targetH, maxColors);
+        // 量化（high 模式使用 PNN，其他使用 Median Cut）
+        var result;
+        if (opts.quality === 'high') {
+            result = window.Quantize.pnnQuant(finalData.data, targetW, targetH, maxColors);
+        } else {
+            result = window.Quantize.medianCut(finalData.data, targetW, targetH, maxColors);
+        }
         return { pixels: result.pixels, palette: result.palette, w: targetW, h: targetH };
     }
 
@@ -120,14 +125,30 @@
     }
 
     function getOptions() {
+        var keepRes = document.getElementById('opt-keep-res').checked;
         var maxWVal = parseInt(document.getElementById('opt-max-width').value);
+        var quality = document.getElementById('opt-quality').value;
+        var maxColors = parseInt(document.getElementById('opt-colors').value) || 256;
+        // 保持原始分辨率时 maxPxWidth=0（不缩放），否则按字符数转像素
+        var maxPxWidth = keepRes ? 0 : ((isNaN(maxWVal) || maxWVal <= 0) ? 640 : maxWVal * 8);
+        var dither = document.getElementById('opt-dither').checked;
+
+        // high 模式覆盖：256色 + 抖动 + 原始分辨率
+        if (quality === 'high') {
+            maxColors = 256;
+            maxPxWidth = 0;
+            dither = true;
+        }
+
         return {
-            maxColors: parseInt(document.getElementById('opt-colors').value) || 256,
-            maxPxWidth: (isNaN(maxWVal) || maxWVal <= 0) ? 0 : maxWVal * 8,
-            dither: document.getElementById('opt-dither').checked,
+            maxColors: maxColors,
+            maxPxWidth: maxPxWidth,
+            keepRes: keepRes,
+            dither: dither,
             eightBit: document.getElementById('opt-8bit').checked,
             griLimit: document.getElementById('opt-gri-limit').checked,
             encodePolicy: document.getElementById('opt-encode').value,
+            quality: quality,
         };
     }
 
@@ -261,6 +282,15 @@
         var slider = document.getElementById('opt-colors');
         var valSpan = document.getElementById('opt-colors-value');
         slider.addEventListener('input', function () { valSpan.textContent = slider.value; });
+
+        // 保持原始分辨率 复选框联动
+        var keepResCb = document.getElementById('opt-keep-res');
+        var maxWInput = document.getElementById('opt-max-width');
+        var maxWLabel = document.getElementById('max-width-label');
+        keepResCb.addEventListener('change', function () {
+            maxWInput.disabled = keepResCb.checked;
+            maxWLabel.style.opacity = keepResCb.checked ? '0.4' : '1';
+        });
 
         // Tab 切换
         var tabs = document.querySelectorAll('.tab');
