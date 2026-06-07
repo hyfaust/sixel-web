@@ -10,10 +10,10 @@
 
     function preprocessImage(imageData, w, h, opts) {
         var maxColors = opts.maxColors || 256;
-        var maxPxWidth = opts.maxPxWidth || 0;  // 0 = 不缩放
-        var dither = opts.dither || false;
+        var maxPxWidth = opts.maxPxWidth || 0;
+        var ditherMode = opts.dither || 'none'; // 'none' | 'bayer' | 'fs'
 
-        // 缩放（保持原始高宽比，仅在 maxPxWidth > 0 时限制最大宽度）
+        // 缩放
         var targetW = w, targetH = h;
         if (maxPxWidth > 0 && w > maxPxWidth) {
             var ratio = maxPxWidth / w;
@@ -39,19 +39,26 @@
         ctx.drawImage(srcCanvas, 0, 0, targetW, targetH);
         var resizedData = ctx.getImageData(0, 0, targetW, targetH);
 
-        // Bayer 抖动
-        var finalData = resizedData;
-        if (dither) {
-            finalData = applyBayerDither(resizedData, targetW, targetH, maxColors);
+        // Bayer 预抖动（量化前）
+        var quantInput = resizedData;
+        if (ditherMode === 'bayer') {
+            quantInput = applyBayerDither(resizedData, targetW, targetH, maxColors);
         }
 
-        // 量化（high 模式使用 PNN，其他使用 Median Cut）
+        // 量化
         var result;
         if (opts.quality === 'high') {
-            result = window.Quantize.pnnQuant(finalData.data, targetW, targetH, maxColors);
+            result = window.Quantize.pnnQuant(quantInput.data, targetW, targetH, maxColors);
         } else {
-            result = window.Quantize.medianCut(finalData.data, targetW, targetH, maxColors);
+            result = window.Quantize.medianCut(quantInput.data, targetW, targetH, maxColors);
         }
+
+        // Floyd-Steinberg 后处理误差扩散（量化后）
+        if (ditherMode === 'fs') {
+            result.pixels = applyFloydSteinberg(
+                quantInput.data, result.pixels, result.palette, targetW, targetH);
+        }
+
         return { pixels: result.pixels, palette: result.palette, w: targetW, h: targetH };
     }
 
@@ -74,6 +81,93 @@
             }
         }
         return new ImageData(data, w, h);
+    }
+
+    /**
+     * Floyd-Steinberg 误差扩散（与 libsixel diffuse_fs 一致）
+     *
+     * 对量化后的像素进行误差扩散：对每个像素找到最近调色板色，
+     * 计算量化误差，按 FS 权重传播到相邻像素。
+     *
+     *          curr    7/16
+     *  3/16    5/16    1/16
+     */
+    function applyFloydSteinberg(rgba, pixels, palette, w, h) {
+        var palCount = palette.length / 3;
+        // 工作缓冲区（float32，每通道独立）
+        var errR = new Float32Array(w * h);
+        var errG = new Float32Array(w * h);
+        var errB = new Float32Array(w * h);
+        // 初始化为原始像素值
+        for (var i = 0; i < w * h; i++) {
+            errR[i] = rgba[i * 4];
+            errG[i] = rgba[i * 4 + 1];
+            errB[i] = rgba[i * 4 + 2];
+        }
+
+        var out = new Uint8Array(w * h);
+
+        for (var y = 0; y < h; y++) {
+            for (var x = 0; x < w; x++) {
+                var pos = y * w + x;
+                var r = errR[pos], g = errG[pos], b = errB[pos];
+                // clamp
+                if (r < 0) r = 0; else if (r > 255) r = 255;
+                if (g < 0) g = 0; else if (g > 255) g = 255;
+                if (b < 0) b = 0; else if (b > 255) b = 255;
+
+                // 找最近调色板色
+                var bestIdx = 0, bestDist = 0x7FFFFFFF;
+                for (var pi = 0; pi < palCount; pi++) {
+                    var dr = r - palette[pi * 3];
+                    var dg = g - palette[pi * 3 + 1];
+                    var db = b - palette[pi * 3 + 2];
+                    var dist = dr * dr + dg * dg + db * db;
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = pi;
+                        if (dist === 0) break;
+                    }
+                }
+                out[pos] = bestIdx;
+
+                // 计算误差
+                var er = r - palette[bestIdx * 3];
+                var eg = g - palette[bestIdx * 3 + 1];
+                var eb = b - palette[bestIdx * 3 + 2];
+
+                // Floyd-Steinberg 误差传播
+                // 右 (7/16)
+                if (x < w - 1) {
+                    var rp = pos + 1;
+                    errR[rp] += er * 7 / 16;
+                    errG[rp] += eg * 7 / 16;
+                    errB[rp] += eb * 7 / 16;
+                }
+                // 左下 (3/16)
+                if (x > 0 && y < h - 1) {
+                    var rp = pos + w - 1;
+                    errR[rp] += er * 3 / 16;
+                    errG[rp] += eg * 3 / 16;
+                    errB[rp] += eb * 3 / 16;
+                }
+                // 下 (5/16)
+                if (y < h - 1) {
+                    var rp = pos + w;
+                    errR[rp] += er * 5 / 16;
+                    errG[rp] += eg * 5 / 16;
+                    errB[rp] += eb * 5 / 16;
+                }
+                // 右下 (1/16)
+                if (x < w - 1 && y < h - 1) {
+                    var rp = pos + w + 1;
+                    errR[rp] += er * 1 / 16;
+                    errG[rp] += eg * 1 / 16;
+                    errB[rp] += eb * 1 / 16;
+                }
+            }
+        }
+        return out;
     }
 
     // ============================================================
@@ -131,13 +225,13 @@
         var maxColors = parseInt(document.getElementById('opt-colors').value) || 256;
         // 保持原始分辨率时 maxPxWidth=0（不缩放），否则按字符数转像素
         var maxPxWidth = keepRes ? 0 : ((isNaN(maxWVal) || maxWVal <= 0) ? 640 : maxWVal * 8);
-        var dither = document.getElementById('opt-dither').checked;
+        var dither = document.getElementById('opt-dither').value;
 
-        // high 模式覆盖：256色 + 抖动 + 原始分辨率
+        // high 模式覆盖：256色 + FS抖动 + 原始分辨率
         if (quality === 'high') {
             maxColors = 256;
             maxPxWidth = 0;
-            dither = true;
+            if (dither === 'none') dither = 'fs';
         }
 
         return {

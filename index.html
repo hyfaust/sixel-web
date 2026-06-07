@@ -51,9 +51,13 @@
                     </div>
                 </div>
                 <div class="form-row">
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="opt-dither">
-                        <label for="opt-dither">Bayer 抖动</label>
+                    <div class="form-group">
+                        <label>抖动模式</label>
+                        <select id="opt-dither">
+                            <option value="none">无</option>
+                            <option value="bayer">Bayer 有序抖动</option>
+                            <option value="fs" selected>Floyd-Steinberg 误差扩散</option>
+                        </select>
                     </div>
                     <div class="checkbox-group">
                         <input type="checkbox" id="opt-8bit">
@@ -111,6 +115,6 @@
     <script src="js/sixel-encoder.js?v=6"></script>
     <script src="js/quantize.js?v=8"></script>
     <script src="js/sixel-decoder.js?v=9"></script>
-    <script src="js/app.js?v=11"></script>
+    <script src="js/app.js?v=12"></script>
 </body>
 </html>
