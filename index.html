@@ -21,18 +21,22 @@
         <div id="tab-convert" class="tab-content active">
             <div class="card">
                 <div class="card-title">参数配置</div>
-                <div class="form-row">
+                <div class="config-grid">
                     <div class="form-group">
-                        <label>调色板颜色数: <span id="opt-colors-value">256</span></label>
-                        <input type="range" id="opt-colors" min="2" max="256" value="256">
+                        <label>质量模式</label>
+                        <select id="opt-quality">
+                            <option value="auto">auto</option>
+                            <option value="low">low（快速）</option>
+                            <option value="high">high（256色+抖动+高清）</option>
+                        </select>
                     </div>
                     <div class="form-group">
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="opt-keep-res" checked>
-                            <label for="opt-keep-res">保持原始分辨率</label>
-                        </div>
-                        <label id="max-width-label" style="opacity:0.4">最大列宽（字符）</label>
-                        <input type="number" id="opt-max-width" value="80" min="10" max="400" disabled>
+                        <label>抖动算法 (dithering)</label>
+                        <select id="opt-dither">
+                            <option value="none">无</option>
+                            <option value="bayer">Bayer</option>
+                            <option value="fs" selected>Floyd-Steinberg</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>编码策略</label>
@@ -42,27 +46,21 @@
                             <option value="size">size（更小体积）</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label>质量模式</label>
-                        <select id="opt-quality">
-                            <option value="auto">auto</option>
-                            <option value="low">low（快速）</option>
-                            <option value="high">high（256色+抖动+高清）</option>
-                        </select>
+                    <div class="form-group span-all">
+                        <label>调色板颜色数: <span id="opt-colors-value">256</span></label>
+                        <input type="range" id="opt-colors" min="2" max="256" value="256">
                     </div>
-                </div>
-                <div class="form-row">
                     <div class="form-group">
-                        <label>抖动算法 (dithering)</label>
-                        <select id="opt-dither" style="max-width:140px">
-                            <option value="none">无</option>
-                            <option value="bayer">Bayer</option>
-                            <option value="fs" selected>Floyd-Steinberg</option>
-                        </select>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="opt-keep-res" checked>
+                            <label for="opt-keep-res">保持原始分辨率</label>
+                        </div>
+                        <label id="max-width-label" style="opacity:0.4;margin-top:6px">最大列宽（字符）</label>
+                        <input type="number" id="opt-max-width" value="80" min="10" max="400" disabled>
                     </div>
                     <div class="form-group">
                         <label class="group-label">兼容性设置</label>
-                        <div style="display:flex;gap:12px;margin-top:4px">
+                        <div class="compat-opts">
                             <div class="checkbox-group">
                                 <input type="checkbox" id="opt-8bit">
                                 <label for="opt-8bit">8bit DCS</label>
