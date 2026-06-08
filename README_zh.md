@@ -31,14 +31,17 @@
 
 - **量化算法**：Median Cut（默认）或 PNN（高质量）
 - **抖动算法**：Floyd-Steinberg 误差扩散（默认）、Bayer 有序抖动、无抖动
+- **加密**：可选 AES-256-GCM 密码加密（PBKDF2 密钥派生）
 - **批量编码**：选择文件夹递归扫描并编码所有图片，输出保留目录结构
 - **设置持久化**：所有选项保存至 localStorage，刷新页面后自动恢复
 
 ### Sixel → 图片解码器
 
 - 完整状态机解析器，兼容 img2sixel 和 pysixel 输出
+- 自动检测加密文件（SXL1 魔数），弹窗输入密码解密
 - 单文件上传、选择文件夹（递归扫描）或导入 ZIP 文件
-- 批量解码，带缩略图预览网格，支持逐个或 ZIP 打包导出
+- 批量解码时密码缓存（输入一次，自动复用于所有加密文件）
+- 带缩略图预览网格，支持逐个或 ZIP 打包导出
 
 ### 参数说明
 
@@ -84,6 +87,7 @@
 |------|--------|------|
 | 调色板颜色数 | 256 | 调色板大小（2-256）。颜色越少文件越小，但质量越低 |
 | 保持原始分辨率 | ✅ | 保持原图尺寸。取消勾选可设置最大列宽 |
+| 加密密码 | （空） | 可选加密密码。留空则不加密，支持任意字符 |
 | 8bit DCS | ❌ | 使用 `0x90` 代替 `ESC P`。仅 VT240 等老终端需要 |
 | GRI ≤255 | ❌ | RLE 重复次数限制为 255。仅 VT240 等老终端需要 |
 
@@ -110,12 +114,14 @@
 ```
 sixel-web/
 ├── index.html          # 入口文件 — 直接打开此文件
+├── favicon.svg         # SVG 图标
 ├── css/style.css       # 样式
 ├── js/
-│   ├── app.js          # UI 逻辑、预处理流水线
-│   ├── quantize.js     # PNN 和 Median Cut 量化
+│   ├── app.js          # 应用逻辑、批处理、ZIP 读写
+│   ├── crypto.js       # AES-256-GCM 加密/解密
+│   ├── quantize.js     # 颜色量化（PNN + Median Cut）
 │   ├── sixel-encoder.js # Sixel 编码器
-│   └── sixel-decoder.js # Sixel 解码器（状态机）
+│   └── sixel-decoder.js # Sixel 解码器（兼容 libsixel）
 └── test/               # 测试文件
 ```
 
@@ -123,16 +129,18 @@ sixel-web/
 
 1. 在浏览器中打开 `index.html`
 2. 配置选项（质量模式、抖动方式、颜色数、分辨率）
-3. 选择一个或多个图片文件（PNG、JPEG、GIF、BMP、WebP），或点击 **"选择文件夹"** 批量编码
-4. 点击 **"转换为 Sixel"**
-5. 预览结果，逐个下载或打包为 ZIP 下载
+3. 可选：在"加密"输入框中输入密码以加密输出
+4. 选择一个或多个图片文件（PNG、JPEG、GIF、BMP、WebP），或点击 **"选择文件夹"** 批量编码
+5. 点击 **"转换为 Sixel"**
+6. 预览结果，逐个下载或打包为 ZIP 下载
 
 ### 解码 Sixel 文件
 
 1. 切换到 **"Sixel → 图片"** 标签页
 2. 拖放 `.six` 文件、选择文件夹或导入 ZIP 压缩包
-3. 查看解码图片（含缩略图预览）
-4. 逐个导出 PNG/JPEG，或打包为 ZIP 下载
+3. 如果文件已加密，会自动弹出密码输入弹窗
+4. 查看解码图片（含缩略图预览）
+5. 逐个导出 PNG/JPEG，或打包为 ZIP 下载
 
 ## 项目结构
 
@@ -144,6 +152,7 @@ sixel-web/
 │   └── style.css           # 响应式 UI 样式
 ├── js/
 │   ├── app.js              # 应用逻辑、批处理、ZIP 读写
+│   ├── crypto.js           # AES-256-GCM 加密/解密
 │   ├── quantize.js         # 颜色量化（PNN + Median Cut）
 │   ├── sixel-encoder.js    # Sixel 协议编码器
 │   └── sixel-decoder.js    # Sixel 协议解码器（兼容 libsixel）

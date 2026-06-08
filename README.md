@@ -31,13 +31,16 @@ Sixel is a bitmap graphics format supported by modern terminal emulators such as
 
 - **Quantization**: Median Cut (default) or PNN (high quality)
 - **Dithering**: Floyd-Steinberg error diffusion (default), Bayer ordered, or none
+- **Encryption**: Optional AES-256-GCM encryption with password (PBKDF2 key derivation)
 - **Batch encoding**: Folder selection with recursive scanning, ZIP download with directory structure
 - **Settings persistence**: All options saved to localStorage, restored on reload
 
 ### Sixel → Image Decoder
 
 - Full state-machine parser compatible with img2sixel and pysixel output
+- Automatic detection of encrypted files (SXL1 magic bytes), password prompt for decryption
 - Single file, folder selection, or ZIP import for batch decoding
+- Batch decode with password caching (enter once, reuse for all encrypted files)
 - Thumbnail preview grid with individual or batch ZIP export
 
 ### Parameter Guide
@@ -84,6 +87,7 @@ Sixel is a bitmap graphics format supported by modern terminal emulators such as
 |--------|---------|-------------|
 | Colors | 256 | Palette size (2-256). Fewer colors = smaller files but lower quality |
 | Keep Resolution | ✅ | Preserve original image dimensions. Uncheck to set max column width |
+| Password | (empty) | Optional encryption password. Leave empty for no encryption. Any characters accepted |
 | 8-bit DCS | ❌ | Use `0x90` instead of `ESC P`. Only for VT240-era terminals |
 | GRI ≤255 | ❌ | Limit RLE repeat count to 255. Only for VT240-era terminals |
 
@@ -110,9 +114,11 @@ Open `index.html` in any modern browser. No build step, no dependencies.
 ```
 sixel-web/
 ├── index.html          # Entry point — open this file
+├── favicon.svg         # SVG favicon
 ├── css/style.css       # Styles
 ├── js/
-│   ├── app.js          # UI logic, preprocessing pipeline
+│   ├── app.js          # UI logic, batch processing, ZIP I/O
+│   ├── crypto.js       # AES-256-GCM encryption/decryption
 │   ├── quantize.js     # PNN and Median Cut quantization
 │   ├── sixel-encoder.js # Sixel encoder
 │   └── sixel-decoder.js # Sixel decoder (state machine)
@@ -123,16 +129,18 @@ sixel-web/
 
 1. Open `index.html` in your browser
 2. Configure options (quality mode, dithering, colors, resolution)
-3. Select one or more image files (PNG, JPEG, GIF, BMP, WebP), or click **"选择文件夹"** to batch encode
-4. Click **"转换为 Sixel"**
-5. Preview the result and download individually, or download all as ZIP
+3. Optionally enter a password in the "加密" field to encrypt the output
+4. Select one or more image files (PNG, JPEG, GIF, BMP, WebP), or click **"选择文件夹"** to batch encode
+5. Click **"转换为 Sixel"**
+6. Preview the result and download individually, or download all as ZIP
 
 ### Decoding a Sixel File
 
 1. Switch to the **"Sixel → 图片"** tab
 2. Drag and drop a `.six` file, select a folder, or import a ZIP archive
-3. View the decoded image(s) with thumbnail previews
-4. Export as PNG/JPEG individually, or download all as ZIP
+3. If the file is encrypted, a password dialog will appear automatically
+4. View the decoded image(s) with thumbnail previews
+5. Export as PNG/JPEG individually, or download all as ZIP
 
 ## Project Structure
 
@@ -144,6 +152,7 @@ sixel-web/
 │   └── style.css           # Responsive UI styles
 ├── js/
 │   ├── app.js              # Application logic, batch processing, ZIP I/O
+│   ├── crypto.js           # AES-256-GCM encryption/decryption
 │   ├── quantize.js         # Color quantization (PNN + Median Cut)
 │   ├── sixel-encoder.js    # Sixel protocol encoder
 │   └── sixel-decoder.js    # Sixel protocol decoder (libsixel-compatible)

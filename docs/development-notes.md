@@ -276,3 +276,46 @@ else el.value = data[id];
 ### 9.3 手动刷新缓存
 
 开发时必须 `Ctrl+Shift+R` 强制刷新，否则浏览器可能使用缓存的旧版本 JS 文件，导致"修改无效"的错觉。
+
+---
+
+## 10. 加密功能
+
+### 10.1 加密文件格式设计
+
+使用 4 字节魔数 `SXL1` 标识加密文件，解码时自动检测。这种设计实现了完全向后兼容：普通 .six 文件正常解码，加密文件弹窗提示输入密码。
+
+```
+Magic("SXL1") + Salt(16B) + IV(12B) + Ciphertext + AuthTag(16B)
+```
+
+**教训**：最初考虑过在 Sixel 文本中嵌入加密标记，但二进制加密数据会破坏 Sixel 协议的文本结构。改为在 Sixel 数据外层包裹加密 header，保持了格式的独立性。
+
+### 10.2 PBKDF2 密钥派生
+
+使用 Web Crypto API 的 `crypto.subtle.deriveKey` 从密码派生 AES-256 密钥。每次加密生成新的随机 Salt（16 字节）和 IV（12 字节），防止彩虹表攻击和密文重放。
+
+**教训**：不要自己实现 PBKDF2，浏览器原生实现经过安全审计且性能更好。
+
+### 10.3 CSS 选择器与动态 type 切换
+
+密码输入框的"显示/隐藏"功能通过切换 `type="password"` ↔ `type="text"` 实现。
+
+**教训**：CSS 选择器 `input[type="password"]` 只匹配 `password` 类型，切换为 `text` 后样式丢失导致输入框缩窄。必须同时匹配两种类型：
+
+```css
+.password-group input[type="password"],
+.password-group input[type="text"] {
+    flex: 1; /* ... */
+}
+```
+
+### 10.4 批量解密的密码缓存
+
+批量解码时，首个加密文件弹窗输入密码后缓存，后续加密文件自动复用。非加密文件正常解码，无需密码。
+
+**设计决策**：缓存仅在单次批量操作内有效，不持久化到 localStorage（安全考虑）。
+
+### 10.5 Web Crypto API 限制
+
+`crypto.subtle` 仅在安全上下文（HTTPS 或 localhost）中可用。在 HTTP 远程访问时加密功能不可用，但不影响其他功能。

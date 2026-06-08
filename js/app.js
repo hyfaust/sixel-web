@@ -252,6 +252,7 @@
             griLimit: document.getElementById('opt-gri-limit').checked,
             encodePolicy: document.getElementById('opt-encode').value,
             quality: quality,
+            password: document.getElementById('opt-password').value || '',
         };
     }
 
@@ -282,16 +283,36 @@
                 var pp = preprocessImage(loaded.imageData, loaded.width, loaded.height, opts);
                 var sixelData = window.SixelEncoder.encodeSixel(pp.pixels, pp.palette, pp.w, pp.h, opts);
                 var elapsed = performance.now() - t0;
-                results.push({
-                    name: file.name.replace(/\.[^.]+$/, '.six'),
-                    data: sixelData,
-                    elapsed: elapsed,
-                    width: pp.w, height: pp.h,
-                    sixelSize: sixelData.length,
-                    originalName: file.name
-                });
-                i++;
-                setTimeout(next, 0);
+
+                var outputData = sixelData;
+                var finalName = file.name.replace(/\.[^.]+$/, '.six');
+
+                // 如果设置了密码，加密输出
+                function pushResult(data) {
+                    results.push({
+                        name: finalName,
+                        data: data,
+                        encrypted: !!opts.password,
+                        elapsed: elapsed,
+                        width: pp.w, height: pp.h,
+                        sixelSize: data.length,
+                        originalName: file.name
+                    });
+                    i++;
+                    setTimeout(next, 0);
+                }
+
+                if (opts.password && window.SixelCrypto) {
+                    window.SixelCrypto.encryptSixel(sixelData, opts.password).then(function (encrypted) {
+                        pushResult(encrypted);
+                    }).catch(function (e) {
+                        results.push({ name: file.name, error: '加密失败: ' + e.message });
+                        i++;
+                        setTimeout(next, 0);
+                    });
+                } else {
+                    pushResult(sixelData);
+                }
             }).catch(function (e) {
                 results.push({ name: file.name, error: e.message || String(e) });
                 i++;
@@ -312,8 +333,9 @@
             }
             var card = document.createElement('div');
             card.className = 'result-card';
+            var encryptedTag = r.encrypted ? ' 🔒 已加密' : '';
             card.innerHTML =
-                '<div class="result-info"><strong>' + r.name + '</strong><br>' +
+                '<div class="result-info"><strong>' + r.name + '</strong>' + encryptedTag + '<br>' +
                 r.width + '×' + r.height + ' | ' + formatBytes(r.sixelSize) + ' | ' + r.elapsed.toFixed(0) + 'ms</div>';
 
             var dlBtn = document.createElement('button');
@@ -344,31 +366,88 @@
 
     var currentDecoded = null;
 
+    function readFileAsArrayBuffer(file) {
+        return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(new Uint8Array(reader.result)); };
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    function decodeAndRender(text, file, infoEl, canvas, exportArea, previewCard) {
+        try {
+            var t0 = performance.now();
+            var result = window.SixelDecoder.renderSixelToCanvas(text, canvas);
+            var elapsed = performance.now() - t0;
+            currentDecoded = { text: text, width: result.width, height: result.height, name: file.name };
+            infoEl.textContent = file.name + ' | ' + result.width + '×' + result.height + ' | ' + formatBytes(file.size) + ' | 解码 ' + elapsed.toFixed(0) + 'ms';
+            previewCard.style.display = 'block';
+            exportArea.style.display = 'flex';
+        } catch (e) {
+            infoEl.textContent = '解码失败: ' + e.message;
+            previewCard.style.display = 'block';
+            exportArea.style.display = 'none';
+        }
+    }
+
     function previewSixel(file) {
         var infoEl = document.getElementById('decode-info');
         var canvas = document.getElementById('decode-canvas');
         var exportArea = document.getElementById('decode-export');
         var previewCard = document.getElementById('decode-preview-card');
 
-        readFileAsText(file).then(function (text) {
-            try {
-                var t0 = performance.now();
-                var result = window.SixelDecoder.renderSixelToCanvas(text, canvas);
-                var elapsed = performance.now() - t0;
-                currentDecoded = { text: text, width: result.width, height: result.height, name: file.name };
-                infoEl.textContent = file.name + ' | ' + result.width + '×' + result.height + ' | ' + formatBytes(file.size) + ' | 解码 ' + elapsed.toFixed(0) + 'ms';
-                previewCard.style.display = 'block';
-                exportArea.style.display = 'flex';
-            } catch (e) {
-                infoEl.textContent = '解码失败: ' + e.message;
-                previewCard.style.display = 'block';
-                exportArea.style.display = 'none';
+        readFileAsArrayBuffer(file).then(function (data) {
+            // 检测是否为加密文件
+            if (window.SixelCrypto && window.SixelCrypto.isEncrypted(data)) {
+                showPasswordModal(function (password) {
+                    if (!password) {
+                        infoEl.textContent = '已取消解密';
+                        previewCard.style.display = 'block';
+                        exportArea.style.display = 'none';
+                        return;
+                    }
+                    window.SixelCrypto.decryptSixel(data, password).then(function (decrypted) {
+                        var text = new TextDecoder('iso-8859-1').decode(decrypted);
+                        decodeAndRender(text, file, infoEl, canvas, exportArea, previewCard);
+                    }).catch(function (e) {
+                        infoEl.textContent = '解密失败: ' + (e.message === 'The operation failed for an operation-specific reason' ? '密码错误' : e.message);
+                        previewCard.style.display = 'block';
+                        exportArea.style.display = 'none';
+                    });
+                });
+            } else {
+                // 非加密文件，正常解码
+                var text = new TextDecoder('iso-8859-1').decode(data);
+                decodeAndRender(text, file, infoEl, canvas, exportArea, previewCard);
             }
         }).catch(function (e) {
             infoEl.textContent = '文件读取失败: ' + (e.message || e);
             previewCard.style.display = 'block';
             exportArea.style.display = 'none';
         });
+    }
+
+    // ============================================================
+    // 密码弹窗
+    // ============================================================
+
+    var passwordModalCallback = null;
+
+    function showPasswordModal(callback) {
+        passwordModalCallback = callback;
+        var modal = document.getElementById('password-modal');
+        var pwInput = document.getElementById('decrypt-password');
+        var errEl = document.getElementById('decrypt-error');
+        modal.style.display = 'flex';
+        pwInput.value = '';
+        errEl.style.display = 'none';
+        pwInput.focus();
+    }
+
+    function hidePasswordModal() {
+        document.getElementById('password-modal').style.display = 'none';
+        passwordModalCallback = null;
     }
 
     function exportDecoded(format) {
@@ -647,15 +726,29 @@
                     var sixelData = window.SixelEncoder.encodeSixel(pp.pixels, pp.palette, pp.w, pp.h, opts);
                     var elapsed = performance.now() - t0;
                     var outPath = entry.path.replace(/\.[^.]+$/, '.six');
-                    results.push({
-                        path: outPath,
-                        data: sixelData,
-                        elapsed: elapsed,
-                        width: pp.w, height: pp.h,
-                        size: sixelData.length
-                    });
-                    idx++;
-                    setTimeout(next, 0);
+
+                    function pushResult(data) {
+                        results.push({
+                            path: outPath,
+                            data: data,
+                            encrypted: !!opts.password,
+                            elapsed: elapsed,
+                            width: pp.w, height: pp.h,
+                            size: data.length
+                        });
+                        idx++;
+                        setTimeout(next, 0);
+                    }
+
+                    if (opts.password && window.SixelCrypto) {
+                        window.SixelCrypto.encryptSixel(sixelData, opts.password).then(pushResult).catch(function (e) {
+                            results.push({ path: entry.path, error: '加密失败: ' + e.message });
+                            idx++;
+                            setTimeout(next, 0);
+                        });
+                    } else {
+                        pushResult(sixelData);
+                    }
                 }).catch(function (e) {
                     results.push({ path: entry.path, error: e.message || String(e) });
                     idx++;
@@ -684,7 +777,8 @@
                 item.innerHTML = '<div class="batch-item-name" title="' + r.path + '">' + r.path + '</div>' +
                     '<div class="batch-item-error">❌ ' + r.error + '</div>';
             } else {
-                item.innerHTML = '<div class="batch-item-name" title="' + r.path + '">' + r.path + '</div>' +
+                var encTag = r.encrypted ? ' 🔒' : '';
+                item.innerHTML = '<div class="batch-item-name" title="' + r.path + '">' + r.path + encTag + '</div>' +
                     '<div class="batch-item-info">' + r.width + '×' + r.height + ' | ' + formatBytes(r.size) + ' | ' + r.elapsed.toFixed(0) + 'ms</div>';
             }
             list.appendChild(item);
@@ -749,6 +843,7 @@
         infoEl.textContent = '解码中... 0/' + sixFiles.length;
         var results = [];
         var idx = 0;
+        var cachedPassword = null; // 批量解密时缓存密码
 
         function next() {
             if (idx >= sixFiles.length) {
@@ -762,51 +857,48 @@
             infoEl.textContent = '解码中... ' + (idx+1) + '/' + sixFiles.length + ' ' + entry.path;
 
             (function(entry, currentIdx) {
-                readFileAsText(entry.file).then(function (text) {
-                    try {
-                        var t0 = performance.now();
-                        var decoded = window.SixelDecoder.decodeSixel(text);
-                        var elapsed = performance.now() - t0;
+                readFileAsArrayBuffer(entry.file).then(function (data) {
+                    // 检测加密
+                    if (window.SixelCrypto && window.SixelCrypto.isEncrypted(data)) {
+                        function tryDecrypt(password) {
+                            window.SixelCrypto.decryptSixel(data, password).then(function (decrypted) {
+                                cachedPassword = password;
+                                processDecodedSixel(new TextDecoder('iso-8859-1').decode(decrypted), entry, results, list);
+                                idx++;
+                                setTimeout(next, 0);
+                            }).catch(function (e) {
+                                var msg = e.message === 'The operation failed for an operation-specific reason' ? '密码错误' : e.message;
+                                results.push({ path: entry.path, error: msg });
+                                var item = document.createElement('div');
+                                item.className = 'batch-item error';
+                                item.innerHTML = '<div class="batch-item-name" title="' + entry.path + '">' + entry.path + '</div>' +
+                                    '<div class="batch-item-error">❌ ' + msg + '</div>';
+                                list.appendChild(item);
+                                idx++;
+                                setTimeout(next, 0);
+                            });
+                        }
 
-                        // 生成缩略图
-                        var thumbCanvas = document.createElement('canvas');
-                        thumbCanvas.width = decoded.width;
-                        thumbCanvas.height = decoded.height;
-                        var ctx = thumbCanvas.getContext('2d');
-                        ctx.putImageData(new ImageData(decoded.pixels, decoded.width, decoded.height), 0, 0);
-                        var thumbUrl = thumbCanvas.toDataURL('image/png', 0.5);
-
-                        // 转为 PNG Blob
-                        var outPath = entry.path.replace(/\.[^.]+$/, '.png');
-                        var pngData = dataUrlToUint8Array(thumbCanvas.toDataURL('image/png'));
-
-                        results.push({
-                            path: outPath,
-                            data: pngData,
-                            thumbUrl: thumbUrl,
-                            width: decoded.width,
-                            height: decoded.height,
-                            size: entry.file.size,
-                            elapsed: elapsed
-                        });
-
-                        // 添加到列表
-                        var item = document.createElement('div');
-                        item.className = 'batch-item';
-                        item.innerHTML = '<img class="batch-thumb" src="' + thumbUrl + '" alt="' + entry.path + '">' +
-                            '<div class="batch-item-name" title="' + entry.path + '">' + entry.path + '</div>' +
-                            '<div class="batch-item-info">' + decoded.width + '×' + decoded.height + ' | ' + formatBytes(entry.file.size) + ' | ' + elapsed.toFixed(0) + 'ms</div>';
-                        list.appendChild(item);
-                    } catch (e) {
-                        results.push({ path: entry.path, error: e.message });
-                        var item = document.createElement('div');
-                        item.className = 'batch-item error';
-                        item.innerHTML = '<div class="batch-item-name" title="' + entry.path + '">' + entry.path + '</div>' +
-                            '<div class="batch-item-error">❌ ' + e.message + '</div>';
-                        list.appendChild(item);
+                        if (cachedPassword) {
+                            tryDecrypt(cachedPassword);
+                        } else {
+                            showPasswordModal(function (password) {
+                                if (!password) {
+                                    results.push({ path: entry.path, error: '已取消解密' });
+                                    idx++;
+                                    setTimeout(next, 0);
+                                    return;
+                                }
+                                tryDecrypt(password);
+                            });
+                        }
+                    } else {
+                        // 非加密文件，正常解码
+                        var text = new TextDecoder('iso-8859-1').decode(data);
+                        processDecodedSixel(text, entry, results, list);
+                        idx++;
+                        setTimeout(next, 0);
                     }
-                    idx++;
-                    setTimeout(next, 0);
                 }).catch(function (e) {
                     results.push({ path: entry.path, error: e.message || String(e) });
                     var item = document.createElement('div');
@@ -820,6 +912,51 @@
             })(entry, currentIdx);
         }
         next();
+    }
+
+    function processDecodedSixel(text, entry, results, list) {
+        try {
+            var t0 = performance.now();
+            var decoded = window.SixelDecoder.decodeSixel(text);
+            var elapsed = performance.now() - t0;
+
+            // 生成缩略图
+            var thumbCanvas = document.createElement('canvas');
+            thumbCanvas.width = decoded.width;
+            thumbCanvas.height = decoded.height;
+            var ctx = thumbCanvas.getContext('2d');
+            ctx.putImageData(new ImageData(decoded.pixels, decoded.width, decoded.height), 0, 0);
+            var thumbUrl = thumbCanvas.toDataURL('image/png', 0.5);
+
+            // 转为 PNG Blob
+            var outPath = entry.path.replace(/\.[^.]+$/, '.png');
+            var pngData = dataUrlToUint8Array(thumbCanvas.toDataURL('image/png'));
+
+            results.push({
+                path: outPath,
+                data: pngData,
+                thumbUrl: thumbUrl,
+                width: decoded.width,
+                height: decoded.height,
+                size: text.length,
+                elapsed: elapsed
+            });
+
+            // 添加到列表
+            var item = document.createElement('div');
+            item.className = 'batch-item';
+            item.innerHTML = '<img class="batch-thumb" src="' + thumbUrl + '" alt="' + entry.path + '">' +
+                '<div class="batch-item-name" title="' + entry.path + '">' + entry.path + '</div>' +
+                '<div class="batch-item-info">' + decoded.width + '×' + decoded.height + ' | ' + elapsed.toFixed(0) + 'ms</div>';
+            list.appendChild(item);
+        } catch (e) {
+            results.push({ path: entry.path, error: e.message });
+            var item = document.createElement('div');
+            item.className = 'batch-item error';
+            item.innerHTML = '<div class="batch-item-name" title="' + entry.path + '">' + entry.path + '</div>' +
+                '<div class="batch-item-error">❌ ' + e.message + '</div>';
+            list.appendChild(item);
+        }
     }
 
     function dataUrlToUint8Array(dataUrl) {
@@ -1012,6 +1149,36 @@
         });
         // <label for="decode-file"> 已自动处理点击触发，无需 JS .click()
         // 仅保留拖放支持
+
+        // 密码显示/隐藏切换
+        document.getElementById('toggle-password').addEventListener('click', function () {
+            var pwInput = document.getElementById('opt-password');
+            pwInput.type = pwInput.type === 'password' ? 'text' : 'password';
+        });
+
+        // 密码弹窗：确认
+        document.getElementById('decrypt-ok').addEventListener('click', function () {
+            var password = document.getElementById('decrypt-password').value;
+            if (passwordModalCallback) {
+                passwordModalCallback(password);
+            }
+            hidePasswordModal();
+        });
+
+        // 密码弹窗：取消
+        document.getElementById('decrypt-cancel').addEventListener('click', function () {
+            if (passwordModalCallback) {
+                passwordModalCallback(null);
+            }
+            hidePasswordModal();
+        });
+
+        // 密码弹窗：回车确认
+        document.getElementById('decrypt-password').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                document.getElementById('decrypt-ok').click();
+            }
+        });
     }
 
     document.addEventListener('DOMContentLoaded', init);

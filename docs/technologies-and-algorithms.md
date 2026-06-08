@@ -332,9 +332,52 @@ GRI（Graphics Repeat Introducer）是 Sixel 的 RLE 压缩命令 `!Nc`。
 
 ---
 
-## 8. 批量处理与 ZIP
+## 8. 文件加密
 
-### 8.1 文件夹选择
+### 8.1 加密算法
+
+使用 **AES-256-GCM**（Galois/Counter Mode）进行认证加密，同时提供：
+- **机密性**：数据加密后不可读
+- **完整性**：GCM 认证标签检测篡改
+
+密钥通过 **PBKDF2**（Password-Based Key Derivation Function 2）从用户密码派生：
+- 迭代次数：100,000（OWASP 推荐最低值）
+- 哈希算法：SHA-256
+- Salt：16 字节随机值（每次加密不同）
+- 输出：256-bit AES 密钥
+
+### 8.2 加密文件格式
+
+```
+┌──────────┬──────────┬──────────┬─────────────────────┐
+│ Magic    │ Salt     │ IV       │ Encrypted Sixel Data│
+│ 4 bytes  │ 16 bytes │ 12 bytes │ N bytes             │
+│ "SXL1"   │ PBKDF2   │ AES-GCM │ 密文 + Auth Tag     │
+└──────────┴──────────┴──────────┴─────────────────────┘
+```
+
+- **Magic** `SXL1`（`0x53 0x58 0x4C 0x31`）：标识文件为加密格式
+- **Salt**：PBKDF2 密钥派生用的随机盐
+- **IV**：AES-GCM 初始化向量（每次加密随机生成）
+- **Encrypted Data**：加密后的 Sixel 数据 + 16 字节 GCM 认证标签
+
+### 8.3 密码处理
+
+- 密码通过 `TextEncoder` 编码为 UTF-8 字节，支持任意字符（中文、emoji、特殊符号等）
+- 密码不持久化，不存入 localStorage，页面刷新后清空
+- 批量解密时，首个加密文件弹窗输入密码后自动缓存，后续文件复用
+
+### 8.4 浏览器兼容性
+
+使用 Web Crypto API（`crypto.subtle`），支持：
+- Chrome 37+、Edge 12+、Firefox 34+、Safari 11+
+- 需要 HTTPS 或 localhost（`crypto.subtle` 在非安全上下文中不可用）
+
+---
+
+## 9. 批量处理与 ZIP
+
+### 9.1 文件夹选择
 
 使用 `<input webkitdirectory>` 属性实现文件夹递归扫描。浏览器会递归获取文件夹内所有文件，每个文件带有 `webkitRelativePath` 属性保留相对路径。
 
@@ -342,7 +385,7 @@ GRI（Graphics Repeat Introducer）是 Sixel 的 RLE 压缩命令 `!Nc`。
 - 编码：`.png` `.jpg` `.jpeg` `.gif` `.bmp` `.webp`
 - 解码：`.six` `.sixel` `.txt`
 
-### 8.2 ZIP 读写
+### 9.2 ZIP 读写
 
 **写入器**（~120 行）：
 - Store 模式（无压缩），零外部依赖
@@ -356,9 +399,9 @@ GRI（Graphics Repeat Introducer）是 Sixel 的 RLE 压缩命令 `!Nc`。
 
 ---
 
-## 9. 性能优化技术
+## 10. 性能优化技术
 
-### 9.1 15-bit 哈希直方图
+### 10.1 15-bit 哈希直方图
 
 将 24-bit RGB 颜色量化到 15-bit（R5G5B5），每个通道取高 5 位：
 
@@ -370,7 +413,7 @@ var hash = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
 - 存储：`Uint16Array(32768)` = 64 KB，在 L1 缓存内
 - 直接索引，无哈希冲突
 
-### 9.2 FS 颜色查找缓存
+### 10.2 FS 颜色查找缓存
 
 FS 误差扩散中每个像素需查找最近调色板色。使用 15-bit 哈希缓存：
 
@@ -381,11 +424,11 @@ FS 误差扩散中每个像素需查找最近调色板色。使用 15-bit 哈希
 
 自然图像中相邻像素颜色高度相似，缓存命中率 > 95%。
 
-### 9.3 直方图采样
+### 10.3 直方图采样
 
 Median Cut 对直方图采样 50,000 像素构建调色板。由于量化本身是近似算法，采样不影响最终调色板质量，但将直方图构建从 O(像素数) 降到 O(50000)。
 
-### 9.4 亮度加权维度选择
+### 10.4 亮度加权维度选择
 
 Median Cut 分割时，按 ITU-R BT.601 亮度权重选择维度：
 

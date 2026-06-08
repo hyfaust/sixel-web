@@ -167,6 +167,47 @@ progress { width: 100%; height: 8px; accent-color: var(--accent); }
 .batch-item-info { font-size: 0.75rem; color: var(--text-dim); }
 .batch-item-error { font-size: 0.8rem; color: var(--error); }
 
+/* Password input */
+.password-group {
+    display: flex; gap: 0.5rem; align-items: center;
+}
+.password-group input[type="password"],
+.password-group input[type="text"] {
+    flex: 1; padding: 0.5rem; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text); font-size: 0.9rem;
+}
+.btn-icon {
+    padding: 0.4rem 0.6rem; font-size: 1rem;
+    line-height: 1; cursor: pointer;
+}
+
+/* Modal */
+.modal {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-content {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.5rem; min-width: 320px;
+    max-width: 90vw;
+}
+.modal-content p {
+    margin-bottom: 1rem; color: var(--text); font-size: 0.95rem;
+}
+.modal-content input[type="password"] {
+    width: 100%; padding: 0.5rem; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text); font-size: 0.9rem; margin-bottom: 0.75rem;
+}
+.modal-error {
+    color: var(--error); font-size: 0.85rem; margin-bottom: 0.75rem;
+}
+.modal-actions {
+    display: flex; gap: 0.5rem; justify-content: flex-end;
+}
+
 .footer {
     margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
     text-align: center; color: var(--text-dim); font-size: 0.8rem;
