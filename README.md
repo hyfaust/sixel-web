@@ -29,23 +29,65 @@ Sixel is a bitmap graphics format supported by modern terminal emulators such as
 
 ### Image → Sixel Encoder
 
-- **Quantization algorithms**: Median Cut (default) and PNN (Pairwise Nearest Neighbor, high quality)
-- **Dithering modes**: Floyd-Steinberg error diffusion (default), Bayer ordered dithering, or none
-- **Quality presets**: auto (balanced), low (fast), high (256 colors + PNN + FS dithering)
-- **Resolution control**: Keep original resolution or set a maximum column width
-- **Encoding policies**: auto (balanced), fast (skip RLE), size (smaller output)
-- **Optional flags**: 8-bit DCS, GRI ≤255 (VT240 compatibility)
-- **Batch encoding**: Select a folder to recursively scan and encode all images; output preserves directory structure
-- **ZIP download**: Batch results packaged as a single ZIP file with preserved folder hierarchy
+- **Quantization**: Median Cut (default) or PNN (high quality)
+- **Dithering**: Floyd-Steinberg error diffusion (default), Bayer ordered, or none
+- **Batch encoding**: Folder selection with recursive scanning, ZIP download with directory structure
 - **Settings persistence**: All options saved to localStorage, restored on reload
 
 ### Sixel → Image Decoder
 
-- Full state-machine parser compatible with both img2sixel and pysixel output
-- Supports raster attributes, HLS and RGB color definitions, RLE compression
-- Single file upload, folder selection (recursive scan), or ZIP file import
-- Batch decode with thumbnail preview grid
-- Export decoded images as PNG or JPEG individually, or batch ZIP download
+- Full state-machine parser compatible with img2sixel and pysixel output
+- Single file, folder selection, or ZIP import for batch decoding
+- Thumbnail preview grid with individual or batch ZIP export
+
+### Parameter Guide
+
+#### Quality Mode
+
+| Mode | Quantization | Dithering | Resolution | Histogram | Use Case |
+|------|-------------|-----------|------------|-----------|----------|
+| **auto** | Median Cut | User choice (default: FS) | User choice | 50K sample | Daily use, balanced speed/quality |
+| **low** | Median Cut | User choice | User choice | 50K sample | Batch processing, previews |
+| **high** | PNN | Auto-enables FS if none | Original (no resize) | Full image | High-fidelity photos, match img2sixel quality |
+
+- **auto**: Median Cut quantization with 50,000-pixel histogram sampling. Fast and sufficient for most images.
+- **low**: Same as auto currently. Reserved for future fast-mode optimizations.
+- **high**: Forces PNN quantization (better gradients and skin tones), Floyd-Steinberg dithering, 256 colors, and original resolution. PNN is 2-5× slower than Median Cut but produces noticeably better results on photos with smooth gradients.
+
+#### Dithering Algorithm
+
+| Mode | Stage | Speed | Quality | Artifacts |
+|------|-------|-------|---------|-----------|
+| **None** | — | Fastest | Lowest | Hard color bands in gradients |
+| **Bayer** | Pre-quantization | Fast | Medium | Visible 8×8 grid pattern in dark areas |
+| **Floyd-Steinberg** | Post-quantization | Medium | Highest | Smooth gradients, no regular pattern |
+
+- **None**: Direct nearest-color mapping. Suitable for screenshots and images with few colors.
+- **Bayer**: Adds an 8×8 threshold matrix before quantization. Faster but produces visible grid textures in smooth gradients.
+- **Floyd-Steinberg**: Propagates quantization error to neighboring pixels after quantization. Best quality, especially in dark/gradient areas. Recommended for photos.
+
+#### Encoding Strategy
+
+| Strategy | RLE Threshold | Speed | File Size | Use Case |
+|----------|--------------|-------|-----------|----------|
+| **auto** | ≥ 4 | Medium | Medium | Default, balanced |
+| **fast** | Skip RLE entirely | Fastest | Largest | Real-time preview, terminal output |
+| **size** | ≥ 2 | Slower | Smallest | Network transfer, storage |
+
+- **auto**: Uses RLE compression when 4+ consecutive identical characters appear. `!Nc` format saves space only when the run length exceeds the format overhead (3 bytes).
+- **fast**: Disables RLE entirely. Every Sixel character is output verbatim. Fastest encoding but largest file size.
+- **size**: Uses RLE for runs of 2+ characters. Smallest output but slower due to more RLE operations.
+
+#### Other Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| Colors | 256 | Palette size (2-256). Fewer colors = smaller files but lower quality |
+| Keep Resolution | ✅ | Preserve original image dimensions. Uncheck to set max column width |
+| 8-bit DCS | ❌ | Use `0x90` instead of `ESC P`. Only for VT240-era terminals |
+| GRI ≤255 | ❌ | Limit RLE repeat count to 255. Only for VT240-era terminals |
+
+For detailed technical explanations, see [docs/technologies-and-algorithms.md](docs/technologies-and-algorithms.md).
 
 ## Performance
 
@@ -107,6 +149,7 @@ sixel-web/
 │   └── sixel-decoder.js    # Sixel protocol decoder (libsixel-compatible)
 ├── docs/
 │   ├── libsixel-optimizations.md  # libsixel C optimization analysis
+│   ├── technologies-and-algorithms.md  # Sixel, dithering, quantization explained
 │   └── development-notes.md       # Development experience and lessons
 ├── test/                   # Test images and .six files
 └── .gitignore
