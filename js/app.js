@@ -1156,6 +1156,29 @@
             pwInput.type = pwInput.type === 'password' ? 'text' : 'password';
         });
 
+        // 生成随机密码（16 位，含大小写字母+数字+符号）
+        document.getElementById('gen-password').addEventListener('click', function () {
+            var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';
+            var arr = new Uint32Array(16);
+            crypto.getRandomValues(arr);
+            var pw = '';
+            for (var i = 0; i < 16; i++) pw += chars[arr[i] % chars.length];
+            var pwInput = document.getElementById('opt-password');
+            pwInput.value = pw;
+            pwInput.type = 'text';
+        });
+
+        // 复制密码到剪贴板
+        document.getElementById('copy-password').addEventListener('click', function () {
+            var pw = document.getElementById('opt-password').value;
+            if (!pw) return;
+            navigator.clipboard.writeText(pw).then(function () {
+                var btn = document.getElementById('copy-password');
+                btn.textContent = '✅';
+                setTimeout(function () { btn.textContent = '📋'; }, 1500);
+            });
+        });
+
         // 密码弹窗：确认
         document.getElementById('decrypt-ok').addEventListener('click', function () {
             var password = document.getElementById('decrypt-password').value;

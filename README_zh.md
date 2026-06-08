@@ -5,7 +5,7 @@
 ---
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-1.1.0-green.svg)]()
 
 > 基于浏览器的 Sixel 图片编码/解码工具 — 纯前端，零服务端依赖。
 
