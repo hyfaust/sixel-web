@@ -381,6 +381,483 @@
     }
 
     // ============================================================
+    // ZIP 写入器（Store 模式，零压缩，零依赖）
+    // ============================================================
+
+    function createZip(files) {
+        // files: [{path: string, data: Uint8Array}]
+        var localParts = [];
+        var centralParts = [];
+        var offset = 0;
+
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            // 路径统一用正斜杠，编码为 UTF-8
+            var normPath = f.path.replace(/\\/g, '/');
+            var nameBytes = new TextEncoder().encode(normPath);
+            var nameLen = nameBytes.length;
+            var dataLen = f.data.length;
+
+            // Local file header (30 + nameLen)
+            var local = new Uint8Array(30 + nameLen);
+            var lv = new DataView(local.buffer);
+            lv.setUint32(0, 0x04034b50, true);  // signature
+            lv.setUint16(4, 20, true);            // version needed
+            lv.setUint16(6, 0x0800, true);        // flags: UTF-8 encoding
+            lv.setUint16(8, 0, true);             // compression (store)
+            lv.setUint16(10, 0, true);            // mod time
+            lv.setUint16(12, 0, true);            // mod date
+            lv.setUint32(14, crc32(f.data), true); // crc32
+            lv.setUint32(18, dataLen, true);      // compressed size
+            lv.setUint32(22, dataLen, true);      // uncompressed size
+            lv.setUint16(26, nameLen, true);      // filename length
+            lv.setUint16(28, 0, true);            // extra length
+            for (var c = 0; c < nameLen; c++) local[30 + c] = nameBytes[c];
+
+            localParts.push(local);
+            localParts.push(f.data);
+
+            // Central directory entry (46 + nameLen)
+            var central = new Uint8Array(46 + nameLen);
+            var cv = new DataView(central.buffer);
+            cv.setUint32(0, 0x02014b50, true);   // signature
+            cv.setUint16(4, 20, true);             // version made by
+            cv.setUint16(6, 20, true);             // version needed
+            cv.setUint16(8, 0x0800, true);         // flags: UTF-8
+            cv.setUint16(10, 0, true);             // compression
+            cv.setUint16(12, 0, true);             // mod time
+            cv.setUint16(14, 0, true);             // mod date
+            cv.setUint32(16, crc32(f.data), true); // crc32
+            cv.setUint32(20, dataLen, true);       // compressed size
+            cv.setUint32(24, dataLen, true);       // uncompressed size
+            cv.setUint16(28, nameLen, true);       // filename length
+            cv.setUint16(30, 0, true);             // extra length
+            cv.setUint16(32, 0, true);             // comment length
+            cv.setUint16(34, 0, true);             // disk number
+            cv.setUint16(36, 0, true);             // internal attrs
+            cv.setUint32(38, 0, true);             // external attrs
+            cv.setUint32(42, offset, true);        // local header offset
+            for (var c = 0; c < nameLen; c++) central[46 + c] = nameBytes[c];
+
+            centralParts.push(central);
+            offset += 30 + nameLen + dataLen;
+        }
+
+        // End of central directory (22 bytes)
+        var cdOffset = offset;
+        var cdSize = 0;
+        for (var i = 0; i < centralParts.length; i++) cdSize += centralParts[i].length;
+
+        var end = new Uint8Array(22);
+        var ev = new DataView(end.buffer);
+        ev.setUint32(0, 0x06054b50, true);
+        ev.setUint16(4, 0, true);
+        ev.setUint16(6, 0, true);
+        ev.setUint16(8, files.length, true);
+        ev.setUint16(10, files.length, true);
+        ev.setUint32(12, cdSize, true);
+        ev.setUint32(16, cdOffset, true);
+        ev.setUint16(20, 0, true);
+
+        // 合并所有部分
+        var totalLen = offset + cdSize + 22;
+        var result = new Uint8Array(totalLen);
+        var pos = 0;
+        for (var i = 0; i < localParts.length; i++) {
+            result.set(localParts[i], pos);
+            pos += localParts[i].length;
+        }
+        for (var i = 0; i < centralParts.length; i++) {
+            result.set(centralParts[i], pos);
+            pos += centralParts[i].length;
+        }
+        result.set(end, pos);
+        return new Blob([result], { type: 'application/zip' });
+    }
+
+    // CRC32 查找表
+    var crc32Table = null;
+    function getCrc32Table() {
+        if (crc32Table) return crc32Table;
+        crc32Table = new Uint32Array(256);
+        for (var i = 0; i < 256; i++) {
+            var c = i;
+            for (var j = 0; j < 8; j++) {
+                c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+            }
+            crc32Table[i] = c;
+        }
+        return crc32Table;
+    }
+
+    function crc32(data) {
+        var table = getCrc32Table();
+        var crc = 0xFFFFFFFF;
+        for (var i = 0; i < data.length; i++) {
+            crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+        }
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    // ============================================================
+    // ZIP 读取器（支持 Store 和 Deflate）
+    // ============================================================
+
+    function readZipFile(arrayBuffer) {
+        var dv = new DataView(arrayBuffer);
+        var buf = new Uint8Array(arrayBuffer);
+        var len = buf.length;
+
+        // 查找 End of Central Directory
+        var eocdOffset = -1;
+        for (var i = len - 22; i >= Math.max(0, len - 65557); i--) {
+            if (dv.getUint32(i, true) === 0x06054b50) { eocdOffset = i; break; }
+        }
+        if (eocdOffset < 0) return Promise.reject(new Error('无效的 ZIP 文件'));
+
+        var cdSize = dv.getUint32(eocdOffset + 12, true);
+        var cdOffset = dv.getUint32(eocdOffset + 16, true);
+
+        // 解析 Central Directory
+        var entries = [];
+        var pos = cdOffset;
+        while (pos < cdOffset + cdSize) {
+            if (dv.getUint32(pos, true) !== 0x02014b50) break;
+            var flags = dv.getUint16(pos + 8, true);
+            var compMethod = dv.getUint16(pos + 10, true);
+            var compSize = dv.getUint32(pos + 20, true);
+            var nameLen = dv.getUint16(pos + 28, true);
+            var extraLen = dv.getUint16(pos + 30, true);
+            var commentLen = dv.getUint16(pos + 32, true);
+            var localOffset = dv.getUint32(pos + 42, true);
+            var isUtf8 = (flags & 0x0800) !== 0;
+
+            var nameBytes = buf.slice(pos + 46, pos + 46 + nameLen);
+            var path = isUtf8
+                ? new TextDecoder('utf-8').decode(nameBytes)
+                : new TextDecoder('iso-8859-1').decode(nameBytes);
+
+            entries.push({ path: path, compMethod: compMethod, compSize: compSize, localOffset: localOffset });
+            pos += 46 + nameLen + extraLen + commentLen;
+        }
+
+        // 提取文件数据
+        var stored = [];
+        var deflatePromises = [];
+
+        for (var i = 0; i < entries.length; i++) {
+            var e = entries[i];
+            if (e.path.endsWith('/')) continue;
+
+            var lp = e.localOffset;
+            if (dv.getUint32(lp, true) !== 0x04034b50) continue;
+            var lNameLen = dv.getUint16(lp + 26, true);
+            var lExtraLen = dv.getUint16(lp + 28, true);
+            var dataOffset = lp + 30 + lNameLen + lExtraLen;
+            var fileData = buf.slice(dataOffset, dataOffset + e.compSize);
+
+            if (e.compMethod === 0) {
+                stored.push({ path: e.path, data: fileData });
+            } else if (e.compMethod === 8 && typeof DecompressionStream !== 'undefined') {
+                deflatePromises.push(decompressDeflate(e.path, fileData));
+            } else if (e.compMethod === 8) {
+                deflatePromises.push(Promise.reject(new Error('浏览器不支持 Deflate 解压')));
+            }
+        }
+
+        if (deflatePromises.length === 0) return Promise.resolve(stored);
+        return Promise.all(deflatePromises).then(function(df) { return stored.concat(df); });
+    }
+
+    function decompressDeflate(path, compressedData) {
+        return new Promise(function(resolve, reject) {
+            try {
+                var ds = new DecompressionStream('deflate-raw');
+                var writer = ds.writable.getWriter();
+                writer.write(compressedData);
+                writer.close();
+                var reader = ds.readable.getReader();
+                var chunks = [];
+                (function read() {
+                    reader.read().then(function(result) {
+                        if (result.done) {
+                            var totalLen = 0;
+                            for (var c = 0; c < chunks.length; c++) totalLen += chunks[c].length;
+                            var merged = new Uint8Array(totalLen);
+                            var off = 0;
+                            for (var c = 0; c < chunks.length; c++) { merged.set(chunks[c], off); off += chunks[c].length; }
+                            resolve({ path: path, data: merged });
+                        } else {
+                            chunks.push(result.value);
+                            read();
+                        }
+                    }).catch(reject);
+                })();
+            } catch (e) { reject(e); }
+        });
+    }
+
+    // ============================================================
+    // 批量编码（文件夹 → Sixel）
+    // ============================================================
+
+    var IMAGE_EXTS = /\.(png|jpe?g|gif|bmp|webp)$/i;
+
+    function batchConvertFolder(files, opts) {
+        var statusEl = document.getElementById('convert-status');
+        var progressEl = document.getElementById('convert-progress');
+        progressEl.style.display = 'block';
+
+        // 过滤图片文件，保留相对路径
+        var imageFiles = [];
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            var relPath = f.webkitRelativePath || f.name;
+            if (IMAGE_EXTS.test(relPath)) {
+                imageFiles.push({ file: f, path: relPath });
+            }
+        }
+
+        if (!imageFiles.length) {
+            statusEl.textContent = '文件夹中未找到图片文件';
+            progressEl.style.display = 'none';
+            return;
+        }
+
+        var results = [];
+        var idx = 0;
+
+        function next() {
+            if (idx >= imageFiles.length) {
+                progressEl.value = 100;
+                var ok = results.filter(function(r){return !r.error;}).length;
+                statusEl.textContent = '完成: ' + ok + '/' + imageFiles.length + ' 个文件';
+                showBatchConvertResults(results);
+                return;
+            }
+            var entry = imageFiles[idx];
+            var currentIdx = idx;
+            statusEl.textContent = '转换中: ' + entry.path + ' (' + (idx+1) + '/' + imageFiles.length + ')';
+            progressEl.value = (idx / imageFiles.length) * 100;
+
+            (function(entry, currentIdx) {
+                loadImage(entry.file).then(function (loaded) {
+                    var t0 = performance.now();
+                    var pp = preprocessImage(loaded.imageData, loaded.width, loaded.height, opts);
+                    var sixelData = window.SixelEncoder.encodeSixel(pp.pixels, pp.palette, pp.w, pp.h, opts);
+                    var elapsed = performance.now() - t0;
+                    var outPath = entry.path.replace(/\.[^.]+$/, '.six');
+                    results.push({
+                        path: outPath,
+                        data: sixelData,
+                        elapsed: elapsed,
+                        width: pp.w, height: pp.h,
+                        size: sixelData.length
+                    });
+                    idx++;
+                    setTimeout(next, 0);
+                }).catch(function (e) {
+                    results.push({ path: entry.path, error: e.message || String(e) });
+                    idx++;
+                    setTimeout(next, 0);
+                });
+            })(entry, currentIdx);
+        }
+        next();
+    }
+
+    function showBatchConvertResults(results) {
+        var card = document.getElementById('batch-convert-results');
+        var info = document.getElementById('batch-convert-info');
+        var list = document.getElementById('batch-convert-list');
+        card.style.display = 'block';
+
+        var ok = results.filter(function(r){return !r.error;}).length;
+        info.textContent = ok + '/' + results.length + ' 个文件转换成功';
+
+        list.innerHTML = '';
+        for (var i = 0; i < results.length; i++) {
+            var r = results[i];
+            var item = document.createElement('div');
+            item.className = 'batch-item' + (r.error ? ' error' : '');
+            if (r.error) {
+                item.innerHTML = '<div class="batch-item-name" title="' + r.path + '">' + r.path + '</div>' +
+                    '<div class="batch-item-error">❌ ' + r.error + '</div>';
+            } else {
+                item.innerHTML = '<div class="batch-item-name" title="' + r.path + '">' + r.path + '</div>' +
+                    '<div class="batch-item-info">' + r.width + '×' + r.height + ' | ' + formatBytes(r.size) + ' | ' + r.elapsed.toFixed(0) + 'ms</div>';
+            }
+            list.appendChild(item);
+        }
+
+        // 绑定 ZIP 下载
+        document.getElementById('batch-convert-zip').onclick = function () {
+            var zipFiles = [];
+            for (var i = 0; i < results.length; i++) {
+                if (!results[i].error) {
+                    zipFiles.push({ path: results[i].path, data: results[i].data });
+                }
+            }
+            if (zipFiles.length) {
+                downloadBlob(createZip(zipFiles), 'sixel-batch.zip');
+            }
+        };
+    }
+
+    // ============================================================
+    // 批量解码（文件夹 → PNG）
+    // ============================================================
+
+    var SIXEL_EXTS = /\.(six|sixel|txt)$/i;
+
+    function batchDecodeFolder(files) {
+        var filtered = [];
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            var relPath = f.webkitRelativePath || f.name;
+            if (SIXEL_EXTS.test(relPath)) {
+                filtered.push({ file: f, path: relPath });
+            }
+        }
+        runBatchDecode(filtered);
+    }
+
+    function batchDecodeFromZip(files) {
+        var filtered = [];
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            var relPath = f._zipPath || f.name;
+            if (SIXEL_EXTS.test(relPath)) {
+                filtered.push({ file: f, path: relPath });
+            }
+        }
+        runBatchDecode(filtered);
+    }
+
+    function runBatchDecode(sixFiles) {
+        var infoEl = document.getElementById('batch-decode-info');
+        var resultsCard = document.getElementById('batch-decode-results');
+        var list = document.getElementById('batch-decode-list');
+        resultsCard.style.display = 'block';
+        list.innerHTML = '';
+
+        if (!sixFiles.length) {
+            infoEl.textContent = '未找到 .six/.sixel 文件';
+            return;
+        }
+
+        infoEl.textContent = '解码中... 0/' + sixFiles.length;
+        var results = [];
+        var idx = 0;
+
+        function next() {
+            if (idx >= sixFiles.length) {
+                var ok = results.filter(function(r){return !r.error;}).length;
+                infoEl.textContent = ok + '/' + sixFiles.length + ' 个文件解码成功';
+                bindBatchDecodeButtons(results);
+                return;
+            }
+            var entry = sixFiles[idx];
+            var currentIdx = idx;
+            infoEl.textContent = '解码中... ' + (idx+1) + '/' + sixFiles.length + ' ' + entry.path;
+
+            (function(entry, currentIdx) {
+                readFileAsText(entry.file).then(function (text) {
+                    try {
+                        var t0 = performance.now();
+                        var decoded = window.SixelDecoder.decodeSixel(text);
+                        var elapsed = performance.now() - t0;
+
+                        // 生成缩略图
+                        var thumbCanvas = document.createElement('canvas');
+                        thumbCanvas.width = decoded.width;
+                        thumbCanvas.height = decoded.height;
+                        var ctx = thumbCanvas.getContext('2d');
+                        ctx.putImageData(new ImageData(decoded.pixels, decoded.width, decoded.height), 0, 0);
+                        var thumbUrl = thumbCanvas.toDataURL('image/png', 0.5);
+
+                        // 转为 PNG Blob
+                        var outPath = entry.path.replace(/\.[^.]+$/, '.png');
+                        var pngData = dataUrlToUint8Array(thumbCanvas.toDataURL('image/png'));
+
+                        results.push({
+                            path: outPath,
+                            data: pngData,
+                            thumbUrl: thumbUrl,
+                            width: decoded.width,
+                            height: decoded.height,
+                            size: entry.file.size,
+                            elapsed: elapsed
+                        });
+
+                        // 添加到列表
+                        var item = document.createElement('div');
+                        item.className = 'batch-item';
+                        item.innerHTML = '<img class="batch-thumb" src="' + thumbUrl + '" alt="' + entry.path + '">' +
+                            '<div class="batch-item-name" title="' + entry.path + '">' + entry.path + '</div>' +
+                            '<div class="batch-item-info">' + decoded.width + '×' + decoded.height + ' | ' + formatBytes(entry.file.size) + ' | ' + elapsed.toFixed(0) + 'ms</div>';
+                        list.appendChild(item);
+                    } catch (e) {
+                        results.push({ path: entry.path, error: e.message });
+                        var item = document.createElement('div');
+                        item.className = 'batch-item error';
+                        item.innerHTML = '<div class="batch-item-name" title="' + entry.path + '">' + entry.path + '</div>' +
+                            '<div class="batch-item-error">❌ ' + e.message + '</div>';
+                        list.appendChild(item);
+                    }
+                    idx++;
+                    setTimeout(next, 0);
+                }).catch(function (e) {
+                    results.push({ path: entry.path, error: e.message || String(e) });
+                    var item = document.createElement('div');
+                    item.className = 'batch-item error';
+                    item.innerHTML = '<div class="batch-item-name" title="' + entry.path + '">' + entry.path + '</div>' +
+                        '<div class="batch-item-error">❌ ' + (e.message || e) + '</div>';
+                    list.appendChild(item);
+                    idx++;
+                    setTimeout(next, 0);
+                });
+            })(entry, currentIdx);
+        }
+        next();
+    }
+
+    function dataUrlToUint8Array(dataUrl) {
+        var base64 = dataUrl.split(',')[1];
+        var binary = atob(base64);
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+    }
+
+    function bindBatchDecodeButtons(results) {
+        // ZIP 下载
+        document.getElementById('batch-decode-zip').onclick = function () {
+            var zipFiles = [];
+            for (var i = 0; i < results.length; i++) {
+                if (!results[i].error) {
+                    zipFiles.push({ path: results[i].path, data: results[i].data });
+                }
+            }
+            if (zipFiles.length) {
+                downloadBlob(createZip(zipFiles), 'decoded-batch.zip');
+            }
+        };
+        // 全部导出 PNG（逐个下载）
+        document.getElementById('batch-decode-png').onclick = function () {
+            for (var i = 0; i < results.length; i++) {
+                if (!results[i].error) {
+                    (function(path, data) {
+                        setTimeout(function () {
+                            downloadBlob(new Blob([data], {type: 'image/png'}), path);
+                        }, 0);
+                    })(results[i].path, results[i].data);
+                }
+            }
+        };
+    }
+
+    // ============================================================
     // 设置持久化 (localStorage)
     // ============================================================
 
@@ -473,9 +950,51 @@
             convertToSixel(Array.from(files), getOptions());
         });
 
+        // 批量编码：选择文件夹
+        document.getElementById('convert-folder').addEventListener('change', function (e) {
+            if (e.target.files.length) {
+                batchConvertFolder(Array.from(e.target.files), getOptions());
+            }
+        });
+
         // Sixel 预览
         document.getElementById('decode-file').addEventListener('change', function (e) {
             if (e.target.files[0]) previewSixel(e.target.files[0]);
+        });
+
+        // 批量解码：选择文件夹
+        document.getElementById('decode-folder').addEventListener('change', function (e) {
+            if (e.target.files.length) {
+                batchDecodeFolder(Array.from(e.target.files));
+            }
+        });
+
+        // 批量解码：选择 ZIP 文件
+        document.getElementById('decode-zip').addEventListener('change', function (e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function () {
+                readZipFile(reader.result).then(function (zipFiles) {
+                    // 将解压的文件转为 File 对象供 batchDecodeFolder 使用
+                    var files = [];
+                    for (var i = 0; i < zipFiles.length; i++) {
+                        var zf = zipFiles[i];
+                        var blob = new Blob([zf.data]);
+                        var f = new File([blob], zf.path.split('/').pop());
+                        // 模拟 webkitRelativePath 保留路径
+                        Object.defineProperty(f, '_zipPath', { value: zf.path });
+                        files.push(f);
+                    }
+                    batchDecodeFromZip(files);
+                }).catch(function (err) {
+                    alert('ZIP 解析失败: ' + err.message);
+                });
+            };
+            reader.onerror = function () { alert('文件读取失败'); };
+            reader.readAsArrayBuffer(file);
+            // 重置 input 以允许重复选择同一文件
+            e.target.value = '';
         });
 
         // 导出按钮

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sixel-Web — Sixel 图片转换工具</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="css/style.css?v=5">
+    <link rel="stylesheet" href="css/style.css?v=6">
 </head>
 <body>
     <div class="container">
@@ -84,12 +84,22 @@
                 <input type="file" id="convert-files" multiple
                        accept="image/png,image/jpeg,image/gif,image/bmp,image/webp">
                 <br><br>
+                <input type="file" id="convert-folder" webkitdirectory multiple class="visually-hidden">
+                <label for="convert-folder" class="btn">选择文件夹</label>
                 <button id="convert-btn" class="btn btn-primary">转换为 Sixel</button>
                 <div class="status" id="convert-status"></div>
                 <progress id="convert-progress" value="0" max="100" style="display:none"></progress>
             </div>
 
             <div id="convert-results"></div>
+
+            <div id="batch-convert-results" class="card" style="display:none">
+                <div class="batch-header">
+                    <span id="batch-convert-info"></span>
+                    <button id="batch-convert-zip" class="btn btn-primary">全部下载 ZIP</button>
+                </div>
+                <div id="batch-convert-list" class="batch-list"></div>
+            </div>
         </div>
 
         <!-- Tab 2: Sixel → 图片 -->
@@ -99,6 +109,12 @@
                 <div id="decode-dropzone" class="dropzone">
                     <label for="decode-file" class="dropzone-label">点击选择或拖放 .six 文件到此处</label>
                     <input type="file" id="decode-file" accept=".six,.sixel,.txt" class="visually-hidden">
+                </div>
+                <div style="margin-top:1rem">
+                    <input type="file" id="decode-folder" webkitdirectory multiple class="visually-hidden">
+                    <label for="decode-folder" class="btn">选择文件夹</label>
+                    <input type="file" id="decode-zip" accept=".zip" class="visually-hidden">
+                    <label for="decode-zip" class="btn">选择 ZIP</label>
                 </div>
             </div>
 
@@ -113,6 +129,15 @@
                     <button id="export-jpeg" class="btn">导出 JPEG</button>
                 </div>
             </div>
+
+            <div id="batch-decode-results" class="card" style="display:none">
+                <div class="batch-header">
+                    <span id="batch-decode-info"></span>
+                    <button id="batch-decode-png" class="btn">全部导出 PNG</button>
+                    <button id="batch-decode-zip" class="btn btn-primary">全部下载 ZIP</button>
+                </div>
+                <div id="batch-decode-list" class="batch-list"></div>
+            </div>
         </div>
 
         <div class="footer">
@@ -124,6 +149,6 @@
     <script src="js/sixel-encoder.js?v=6"></script>
     <script src="js/quantize.js?v=14"></script>
     <script src="js/sixel-decoder.js?v=9"></script>
-    <script src="js/app.js?v=16"></script>
+    <script src="js/app.js?v=21"></script>
 </body>
 </html>

@@ -35,14 +35,17 @@
 - **分辨率控制**：保持原始分辨率或设置最大列宽
 - **编码策略**：auto（平衡）、fast（跳过 RLE）、size（更小体积）
 - **可选标志**：8-bit DCS、GRI ≤255（VT240 兼容）
+- **批量编码**：选择文件夹递归扫描并编码所有图片，输出保留目录结构
+- **ZIP 下载**：批量结果打包为单个 ZIP 文件，保留文件夹层级
 - **设置持久化**：所有选项保存至 localStorage，刷新页面后自动恢复
 
 ### Sixel → 图片解码器
 
 - 完整状态机解析器，兼容 img2sixel 和 pysixel 输出
 - 支持光栅属性、HLS 和 RGB 颜色定义、RLE 压缩
-- 拖放或点击上传 `.six` 文件
-- 导出解码图片为 PNG 或 JPEG
+- 单文件上传、选择文件夹（递归扫描）或导入 ZIP 文件
+- 批量解码，带缩略图预览网格
+- 逐个导出 PNG/JPEG，或批量 ZIP 下载
 
 ## 性能优化
 
@@ -78,28 +81,33 @@ sixel-web/
 
 1. 在浏览器中打开 `index.html`
 2. 配置选项（质量模式、抖动方式、颜色数、分辨率）
-3. 选择一个或多个图片文件（PNG、JPEG、GIF、BMP、WebP）
+3. 选择一个或多个图片文件（PNG、JPEG、GIF、BMP、WebP），或点击 **"选择文件夹"** 批量编码
 4. 点击 **"转换为 Sixel"**
-5. 预览结果并下载 `.six` 文件
+5. 预览结果，逐个下载或打包为 ZIP 下载
 
 ### 解码 Sixel 文件
 
 1. 切换到 **"Sixel → 图片"** 标签页
-2. 拖放 `.six` 文件，或点击选择文件
-3. 查看解码图片，导出为 PNG 或 JPEG
+2. 拖放 `.six` 文件、选择文件夹或导入 ZIP 压缩包
+3. 查看解码图片（含缩略图预览）
+4. 逐个导出 PNG/JPEG，或打包为 ZIP 下载
 
 ## 项目结构
 
 ```
 sixel-web/
 ├── index.html              # 单页应用
+├── favicon.svg             # SVG 图标
 ├── css/
 │   └── style.css           # 响应式 UI 样式
 ├── js/
-│   ├── app.js              # 应用逻辑与预处理流水线
+│   ├── app.js              # 应用逻辑、批处理、ZIP 读写
 │   ├── quantize.js         # 颜色量化（PNN + Median Cut）
 │   ├── sixel-encoder.js    # Sixel 协议编码器
 │   └── sixel-decoder.js    # Sixel 协议解码器（兼容 libsixel）
+├── docs/
+│   ├── libsixel-optimizations.md  # libsixel C 优化分析
+│   └── development-notes.md       # 开发经验与教训
 ├── test/                   # 测试图片和 .six 文件
 └── .gitignore
 ```

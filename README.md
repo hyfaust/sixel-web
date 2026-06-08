@@ -35,14 +35,17 @@ Sixel is a bitmap graphics format supported by modern terminal emulators such as
 - **Resolution control**: Keep original resolution or set a maximum column width
 - **Encoding policies**: auto (balanced), fast (skip RLE), size (smaller output)
 - **Optional flags**: 8-bit DCS, GRI ≤255 (VT240 compatibility)
+- **Batch encoding**: Select a folder to recursively scan and encode all images; output preserves directory structure
+- **ZIP download**: Batch results packaged as a single ZIP file with preserved folder hierarchy
 - **Settings persistence**: All options saved to localStorage, restored on reload
 
 ### Sixel → Image Decoder
 
 - Full state-machine parser compatible with both img2sixel and pysixel output
 - Supports raster attributes, HLS and RGB color definitions, RLE compression
-- Drag-and-drop or click to upload `.six` files
-- Export decoded image as PNG or JPEG
+- Single file upload, folder selection (recursive scan), or ZIP file import
+- Batch decode with thumbnail preview grid
+- Export decoded images as PNG or JPEG individually, or batch ZIP download
 
 ## Performance
 
@@ -78,28 +81,33 @@ sixel-web/
 
 1. Open `index.html` in your browser
 2. Configure options (quality mode, dithering, colors, resolution)
-3. Select one or more image files (PNG, JPEG, GIF, BMP, WebP)
-4. Click **"转换为 Sixel"** (Convert to Sixel)
-5. Preview the result and download the `.six` file
+3. Select one or more image files (PNG, JPEG, GIF, BMP, WebP), or click **"选择文件夹"** to batch encode
+4. Click **"转换为 Sixel"**
+5. Preview the result and download individually, or download all as ZIP
 
 ### Decoding a Sixel File
 
 1. Switch to the **"Sixel → 图片"** tab
-2. Drag and drop a `.six` file, or click to select
-3. View the decoded image and export as PNG or JPEG
+2. Drag and drop a `.six` file, select a folder, or import a ZIP archive
+3. View the decoded image(s) with thumbnail previews
+4. Export as PNG/JPEG individually, or download all as ZIP
 
 ## Project Structure
 
 ```
 sixel-web/
 ├── index.html              # Single-page application
+├── favicon.svg             # SVG favicon
 ├── css/
 │   └── style.css           # Responsive UI styles
 ├── js/
-│   ├── app.js              # Application logic & preprocessing pipeline
+│   ├── app.js              # Application logic, batch processing, ZIP I/O
 │   ├── quantize.js         # Color quantization (PNN + Median Cut)
 │   ├── sixel-encoder.js    # Sixel protocol encoder
 │   └── sixel-decoder.js    # Sixel protocol decoder (libsixel-compatible)
+├── docs/
+│   ├── libsixel-optimizations.md  # libsixel C optimization analysis
+│   └── development-notes.md       # Development experience and lessons
 ├── test/                   # Test images and .six files
 └── .gitignore
 ```
