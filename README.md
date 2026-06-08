@@ -15,6 +15,7 @@
 - [Features](#features)
 - [Usage](#usage)
 - [Project Structure](#project-structure)
+- [Known Issues](#known-issues)
 - [Acknowledgments](#acknowledgments)
 - [License](#license)
 
@@ -102,6 +103,10 @@ sixel-web/
 ├── test/                   # Test images and .six files
 └── .gitignore
 ```
+
+## Known Issues
+
+- **Sixel decoding does not work on Firefox for Android.** The Sixel → Image decoder relies on `<label>` triggering a visually-hidden `<input type="file">`, which Firefox on Android does not support reliably. Encoding (Image → Sixel) works on all mobile browsers. Tested: Edge Mobile ✅, Chrome Mobile ✅, Firefox Mobile ❌.
 
 ## Acknowledgments
 

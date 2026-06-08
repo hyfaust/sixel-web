@@ -15,6 +15,7 @@
 - [功能特性](#功能特性)
 - [使用方法](#使用方法)
 - [项目结构](#项目结构)
+- [已知问题](#已知问题)
 - [致谢](#致谢)
 - [许可证](#许可证)
 
@@ -102,6 +103,10 @@ sixel-web/
 ├── test/                   # 测试图片和 .six 文件
 └── .gitignore
 ```
+
+## 已知问题
+
+- **Sixel 解码在 Firefox Android 版上无法正常工作。** Sixel → 图片解码器依赖 `<label>` 触发视觉隐藏的 `<input type="file">`，Firefox Android 版对此支持不完善。编码功能（图片 → Sixel）在所有移动端浏览器上均可正常使用。测试结果：Edge Mobile ✅、Chrome Mobile ✅、Firefox Mobile ❌。
 
 ## 致谢
 
