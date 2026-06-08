@@ -55,6 +55,7 @@ h1 { font-size: 2rem; margin-bottom: 0.5rem; }
 .card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;
+    overflow: hidden;
 }
 .card-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
 
@@ -68,9 +69,10 @@ h1 { font-size: 2rem; margin-bottom: 0.5rem; }
 /* Config grid layout */
 .config-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr 1fr 1.5fr;
     gap: 0.75rem 1rem;
 }
+.config-grid .form-group { min-width: 0; }
 .config-grid .span-all { grid-column: 1 / -1; }
 .compat-opts { display: flex; gap: 16px; margin-top: 4px; }
 
@@ -78,6 +80,7 @@ input[type="file"], input[type="number"], select {
     width: 100%; padding: 0.5rem; background: var(--bg);
     border: 1px solid var(--border); border-radius: 4px;
     color: var(--text); font-size: 0.9rem;
+    box-sizing: border-box; min-width: 0;
 }
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 input[type="checkbox"] { accent-color: var(--accent); }
@@ -222,4 +225,7 @@ progress { width: 100%; height: 8px; accent-color: var(--accent); }
     .form-row { flex-direction: column; }
     .config-grid { grid-template-columns: 1fr; }
     .result-card { flex-direction: column; align-items: flex-start; }
+    .password-group { flex-wrap: wrap; }
+    .compat-opts { flex-wrap: wrap; }
+    .card { padding: 1rem; }
 }

@@ -319,3 +319,45 @@ Magic("SXL1") + Salt(16B) + IV(12B) + Ciphertext + AuthTag(16B)
 ### 10.5 Web Crypto API 限制
 
 `crypto.subtle` 仅在安全上下文（HTTPS 或 localhost）中可用。在 HTTP 远程访问时加密功能不可用，但不影响其他功能。
+
+### 10.6 随机密码生成
+
+使用 `crypto.getRandomValues(new Uint32Array(16))` 生成 16 位随机密码，字符集排除易混淆字符（`I/l/O/0/1`）。
+
+```js
+var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';
+var arr = new Uint32Array(16);
+crypto.getRandomValues(arr);
+```
+
+**教训**：不要用 `Math.random()`（伪随机，不安全）。`crypto.getRandomValues` 调用操作系统级熵源（Windows: `BCryptGenRandom`，Linux: `/dev/urandom`），密码学安全。
+
+### 10.7 Clipboard API
+
+复制密码使用 `navigator.clipboard.writeText()`，仅在安全上下文中可用。复制成功后按钮短暂变为 ✅ 确认。
+
+```js
+navigator.clipboard.writeText(pw).then(function () {
+    btn.textContent = '✅';
+    setTimeout(function () { btn.textContent = '📋'; }, 1500);
+});
+```
+
+### 10.8 CSS Grid 布局溢出
+
+**教训**：CSS Grid 子元素默认 `min-width: auto`，即子元素内容的最小宽度。当 `select` 或 `input` 内容较宽时，会撑破 grid 单元格导致溢出。
+
+修复：给 grid 子元素添加 `min-width: 0`，允许其缩小到比内容更窄：
+
+```css
+.config-grid .form-group { min-width: 0; }
+input[type="number"], select { min-width: 0; box-sizing: border-box; }
+```
+
+移动端还需给 flex 容器添加 `flex-wrap: wrap` 和减小 `.card` 的 padding。
+
+### 10.9 版本号管理
+
+版本号硬编码在 HTML 中（`<span class="version">v1.1.1</span>`），不自动同步 GitHub tag。发版时需手动更新：标题、页脚、README 徽章。
+
+**设计决策**：纯静态页面无构建流程，硬编码最简单。自动同步需要 GitHub Actions 或运行时 API 调用，增加复杂度。

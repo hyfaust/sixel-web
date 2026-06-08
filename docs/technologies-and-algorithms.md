@@ -367,7 +367,20 @@ GRI（Graphics Repeat Introducer）是 Sixel 的 RLE 压缩命令 `!Nc`。
 - 密码不持久化，不存入 localStorage，页面刷新后清空
 - 批量解密时，首个加密文件弹窗输入密码后自动缓存，后续文件复用
 
-### 8.4 浏览器兼容性
+### 8.4 随机密码生成
+
+使用 `crypto.getRandomValues` 生成 16 位密码学安全随机密码：
+
+- 字符集：62 个字符（`A-Z` 去 `I/O`，`a-z` 去 `l/o`，`2-9` 去 `0/1`，`!@#$%&*`）
+- 排除易混淆字符减少输入错误
+- 熵值：`log2(62^16) ≈ 95 bits`
+- 生成后自动显示明文，方便用户复制
+
+### 8.5 剪贴板复制
+
+使用 `navigator.clipboard.writeText()` API 将密码复制到系统剪贴板。复制成功后按钮短暂变为 ✅ 确认。
+
+### 8.6 浏览器兼容性
 
 使用 Web Crypto API（`crypto.subtle`），支持：
 - Chrome 37+、Edge 12+、Firefox 34+、Safari 11+
