@@ -364,6 +364,10 @@
                 previewCard.style.display = 'block';
                 exportArea.style.display = 'none';
             }
+        }).catch(function (e) {
+            infoEl.textContent = '文件读取失败: ' + (e.message || e);
+            previewCard.style.display = 'block';
+            exportArea.style.display = 'none';
         });
     }
 
@@ -487,9 +491,8 @@
             this.classList.remove('dragover');
             if (e.dataTransfer.files[0]) previewSixel(e.dataTransfer.files[0]);
         });
-        dropZone.addEventListener('click', function () {
-            document.getElementById('decode-file').click();
-        });
+        // <label for="decode-file"> 已自动处理点击触发，无需 JS .click()
+        // 仅保留拖放支持
     }
 
     document.addEventListener('DOMContentLoaded', init);
